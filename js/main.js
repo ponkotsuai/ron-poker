@@ -10,7 +10,6 @@ const HUMAN = 0;
 // Turn order is 0 → 1 → 2 → 3. Seat 1 sits to your right, 2 across, 3 to your left.
 const AI_SEATS = { 1: 'tanuki', 2: 'tsuru', 3: 'kitsune' };
 const GLYPH = { tanuki: '狸', tsuru: '鶴', kitsune: '狐' };
-const OPPONENT_ORDER = [3, 2, 1];
 
 const $ = sel => document.querySelector(sel);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -217,7 +216,7 @@ function riichiStick(on) {
   return on ? `<span class="stick" title="Riichi"><span></span></span>` : '';
 }
 
-function opponentPanel(seat) {
+function opponentPanel(seat, side) {
   const g = ui.game;
   const id = AI_SEATS[seat];
   const p = g ? g.players[seat] : { hand: [1, 2, 3, 4], discards: [], riichi: false };
@@ -228,50 +227,60 @@ function opponentPanel(seat) {
   const isDealer = g && g.dealer === seat;
   const active = g && !g.over && g.turn === seat;
   return `
-    <section class="seat opp ${active ? 'active' : ''} ${p.riichi ? 'in-riichi' : ''}" aria-label="${seatName(seat)}">
+    <section class="seat opp ${side} ${active ? 'active' : ''} ${p.riichi ? 'in-riichi' : ''}" aria-label="${seatName(seat)}">
       <header class="seat-head">
         <span class="glyph">${GLYPH[id]}</span>
         <span class="who">
           <span class="name">${seatName(seat)}${isDealer ? `<span class="dealer">${t('dealer')}</span>` : ''}</span>
           <span class="style">${t(`styles.${id}`)}</span>
         </span>
-        ${riichiStick(p.riichi)}
       </header>
       <div class="purse">
         <span class="pts">${pts}<small>${t('pts')}</small></span>
         <span class="near">${(pts * NEAR_PER_POINT).toFixed(1)} NEAR</span>
         <span class="mood ${mood}">${t(`moods.${mood}`)}</span>
+        ${riichiStick(p.riichi)}
       </div>
       <p class="bubble ${ui.thinking === seat ? 'thinking' : ''}">${ui.thinking === seat ? '<span class="dots"><i></i><i></i><i></i></span>' : bubbleText}</p>
-      <div class="backs">${p.hand.map(() => tile(null, { back: true, size: 'xs' })).join('')}</div>
-      <div class="river">${river(p, seat)}</div>
+      <div class="backs">${p.hand.map(() => tile(null, { back: true, size: 'xxs' })).join('')}</div>
     </section>`;
 }
 
-function centerStrip() {
+function statusText() {
+  const g = ui.game;
+  if (!g) return '';
+  if (ui.pending?.type === 'discard') return ui.selected != null ? t('selected', { card: cardLabel(g.players[HUMAN].hand[ui.selected]) }) : t('pickTile');
+  if (ui.pending?.type === 'tsumo') return t('canTsumo', { hand: t(`hands.${ui.pending.ev.key}`), points: ui.pending.ev.points });
+  if (ui.pending?.type === 'ron') return t('canRon', { name: seatName(ui.pending.from), card: cardLabel(ui.pending.tile), hand: t(`hands.${ui.pending.ev.key}`), points: ui.pending.ev.points });
+  if (g.players[HUMAN].riichi && g.turn === HUMAN) return t('riichiLocked');
+  if (ui.thinking != null) return t('waitingFor', { name: seatName(ui.thinking) });
+  return '';
+}
+
+// The board in the middle: each player's discards sit on their own side, like a mahjong table.
+function board() {
   const g = ui.game;
   const handNo = g ? Math.min(g.handNo + 1, g.totalHands) : 1;
   const total = g ? g.totalHands : 8;
   const wall = g ? g.wall.length : 38;
-  let status = '';
-  if (ui.pending?.type === 'discard') status = ui.selected != null ? t('selected', { card: cardLabel(g.players[HUMAN].hand[ui.selected]) }) : t('pickTile');
-  else if (ui.pending?.type === 'tsumo') status = t('canTsumo', { hand: t(`hands.${ui.pending.ev.key}`), points: ui.pending.ev.points });
-  else if (ui.pending?.type === 'ron') status = t('canRon', { name: seatName(ui.pending.from), card: cardLabel(ui.pending.tile), hand: t(`hands.${ui.pending.ev.key}`), points: ui.pending.ev.points });
-  else if (g && g.players[HUMAN].riichi && g.turn === HUMAN) status = t('riichiLocked');
-  else if (ui.thinking != null) status = t('waitingFor', { name: seatName(ui.thinking) });
+  const empty = { discards: [], riichiAt: -1 };
+  const r = seat => river(g ? g.players[seat] : empty, seat);
+  const turnSeat = g && !g.over ? g.turn : null;
   const pips = Array.from({ length: total }, (_, i) => `<i class="${i < handNo - 1 ? 'done' : i === handNo - 1 ? 'now' : ''}"></i>`).join('');
+  const dealer = g ? g.dealer : 0;
   return `
-    <div class="center">
-      <div class="round">
+    <div class="board">
+      <div class="river r-top ${turnSeat === 2 ? 'turn' : ''}" aria-label="${seatName(2)}">${r(2)}</div>
+      <div class="river r-left ${turnSeat === 3 ? 'turn' : ''}" aria-label="${seatName(3)}">${r(3)}</div>
+      <div class="core">
         <span class="label">${t('hand')}</span>
         <span class="big">${handNo}<small>/${total}</small></span>
         <span class="pips" aria-hidden="true">${pips}</span>
+        <span class="wallcount"><span class="stack" aria-hidden="true"><i></i><i></i><i></i></span><span class="label">${t('wall')}</span> <span class="num">${wall}</span></span>
+        <span class="dealer-tag">${t('dealer')}: ${seatName(dealer)}</span>
       </div>
-      <p class="status" role="status">${status}</p>
-      <div class="wallcount">
-        <span class="stack" aria-hidden="true"><i></i><i></i><i></i></span>
-        <span><span class="label">${t('wall')}</span> <span class="big">${wall}</span></span>
-      </div>
+      <div class="river r-right ${turnSeat === 1 ? 'turn' : ''}" aria-label="${seatName(1)}">${r(1)}</div>
+      <div class="river r-me ${turnSeat === HUMAN ? 'turn' : ''}" aria-label="${t('you')}">${r(HUMAN)}</div>
     </div>`;
 }
 
@@ -317,7 +326,7 @@ function myArea() {
   const isDealer = g && g.dealer === HUMAN;
   return `
     <section class="seat me ${g && !g.over && g.turn === HUMAN ? 'active' : ''} ${me.riichi ? 'in-riichi' : ''}" aria-label="${t('you')}">
-      <div class="river mine">${river(me, HUMAN)}</div>
+      <p class="status" role="status">${statusText()}</p>
       <div class="me-row">
         <div class="purse">
           <span class="name">${t('you')}${isDealer ? `<span class="dealer">${t('dealer')}</span>` : ''}</span>
@@ -374,7 +383,7 @@ function resultOverlay() {
   const g = ui.game;
   if (r.type === 'exhausted') {
     return `<div class="sheet result"><p class="eyebrow">${t('hand')} ${r.handNo + 1}</p><h2>${t('resultExhausted')}</h2>
-      <p>${t('logExhausted')}</p><div class="row"><button type="button" class="act gold primary" data-act="next">${t('nextHand')}</button></div></div>`;
+      <p>${t('logExhausted')}</p><ul class="standings">${standings(g.points, 'hand', handDeltas(r))}</ul><div class="row"><button type="button" class="act gold primary" data-act="next">${t('nextHand')}</button></div></div>`;
   }
   const lines = r.transfers.filter(x => x.amount > 0).map(x => `<li>${t('paid', { from: seatName(x.from), to: seatName(x.to), amount: x.amount })}</li>`).join('');
   return `
@@ -385,22 +394,37 @@ function resultOverlay() {
       <p class="calc"><span>${r.ev.base}</span>${r.ev.jokers ? ` × <span class="gold-text">${t('jokerBonus', { mult: r.ev.mult })}</span>` : ''}
         ${r.type === 'ron' ? ' × 3' : ''} = <b>${r.ev.points * (r.type === 'ron' ? 3 : 1)}${t('pts')}</b>${r.type === 'tsumo' ? ` <small>(${t('everyonePays')})</small>` : ''}</p>
       <ul class="transfers">${lines}</ul>
-      <ul class="standings">${standings(g.points)}</ul>
+      <ul class="standings">${standings(g.points, 'hand', handDeltas(r))}</ul>
       <div class="row"><button type="button" class="act gold primary" data-act="next">${t('nextHand')}</button></div>
     </div>`;
 }
 
-function standings(points, payout = false) {
-  return [0, 1, 2, 3]
+function handDeltas(record) {
+  const d = [0, 0, 0, 0];
+  for (const x of record.transfers || []) { d[x.from] -= x.amount; d[x.to] += x.amount; }
+  return d;
+}
+
+function signed(n) {
+  return `${n > 0 ? '+' : ''}${n}`;
+}
+
+// mode 'hand': points now and the change in this hand. mode 'final': points, net vs buy-in, NEAR payout.
+function standings(points, mode, deltas = null) {
+  const final = mode === 'final';
+  const head = `<li class="head"><span></span><span></span><span class="num">${t('colPoints')}</span>
+    <span class="num">${final ? t('colNet') : t('colThisHand')}</span>${final ? `<span class="num">${t('payout')}</span>` : ''}</li>`;
+  const rows = [0, 1, 2, 3]
     .map(seat => ({ seat, pts: points[seat] }))
     .sort((a, b) => b.pts - a.pts)
     .map(({ seat, pts }, i) => {
-      const diff = pts - START_POINTS;
+      const diff = final ? pts - START_POINTS : deltas[seat];
       const near = (pts * NEAR_PER_POINT).toFixed(1);
       return `<li class="${seat === HUMAN ? 'me' : ''}"><span class="place">${i + 1}</span><span class="nm">${seatName(seat)}</span>
-        <span class="num">${pts}${t('pts')}</span><span class="num diff ${diff > 0 ? 'up' : diff < 0 ? 'down' : ''}">${diff > 0 ? '+' : ''}${diff}</span>
-        ${payout ? `<span class="num near">${near} NEAR</span>` : ''}</li>`;
+        <span class="num">${pts}${t('pts')}</span><span class="num diff ${diff > 0 ? 'up' : diff < 0 ? 'down' : ''}">${diff === 0 ? '±0' : signed(diff)}</span>
+        ${final ? `<span class="num near">${near} NEAR</span>` : ''}</li>`;
     }).join('');
+  return head + rows;
 }
 
 function finalOverlay() {
@@ -409,7 +433,7 @@ function finalOverlay() {
     <div class="sheet final">
       <p class="eyebrow">${t('payout')}</p>
       <h2>${t('finalTitle')}</h2>
-      <ul class="standings">${standings(g.points, true)}</ul>
+      <ul class="standings">${standings(g.points, 'final')}</ul>
       <p class="note">${t('seed')}: <code>${g.seed}</code></p>
       <div class="row"><button type="button" class="act gold primary" data-act="start">${t('playAgain')}</button></div>
     </div>`;
@@ -430,8 +454,10 @@ function render() {
   document.documentElement.lang = getLang();
   $('#lang').textContent = t('lang');
   $('#rulesBtn').textContent = t('rules');
-  $('#opponents').innerHTML = OPPONENT_ORDER.map(opponentPanel).join('');
-  $('#center').innerHTML = centerStrip();
+  $('#seat-top').innerHTML = opponentPanel(2, 'top');
+  $('#seat-left').innerHTML = opponentPanel(3, 'side');
+  $('#seat-right').innerHTML = opponentPanel(1, 'side');
+  $('#board').innerHTML = board();
   $('#mine').innerHTML = myArea();
   $('#log').innerHTML = logPanel();
   const ov = $('#overlay');

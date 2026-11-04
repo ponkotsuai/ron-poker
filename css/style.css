@@ -1,5 +1,6 @@
-/* Layout: a mahjong table at night. Opponents across the top, the table's center strip,
-   your seat at the bottom, and the table log beside it on wide screens.
+/* Layout: a mahjong table at night, seen from your seat. Opponents sit left, across and right;
+   every player's discards lie on their own side of the board in the middle; you sit at the bottom.
+   The table log sits beside it on wide screens.
    Playing cards are drawn as mahjong tiles: ivory face, bamboo-green back, a visible thickness. */
 :root {
   --felt: #0e3a2f;
@@ -75,10 +76,19 @@ button:focus-visible, .tile:focus-visible { outline: 2px solid var(--gold); outl
 @media (min-width: 980px) {
   .page { grid-template-columns: minmax(0, 1fr) 280px; align-items: start; }
 }
-.table { display: grid; gap: 14px; min-width: 0; }
+.table {
+  display: grid; gap: 10px; min-width: 0;
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 2.4fr) minmax(0, 0.8fr);
+  grid-template-areas: "top top top" "left board right" "me me me";
+}
+@media (min-width: 760px) { .table { grid-template-columns: 180px minmax(0, 1fr) 180px; } }
+.area-top { grid-area: top; display: grid; justify-items: center; min-width: 0; }
+.area-left { grid-area: left; min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr); }
+.area-right { grid-area: right; min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr); }
+.area-board { grid-area: board; min-width: 0; display: grid; }
+.area-me { grid-area: me; min-width: 0; }
 
 /* ---- seats ------------------------------------------------------------ */
-#opponents { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
 .seat {
   border: 1px solid var(--felt-line);
   border-radius: 10px;
@@ -133,7 +143,7 @@ button:focus-visible, .tile:focus-visible { outline: 2px solid var(--gold); outl
 .dots i:nth-child(3) { animation-delay: 0.3s; }
 @keyframes blink { 0%, 100% { opacity: 0.25; } 50% { opacity: 1; } }
 
-.backs { display: flex; gap: 3px; }
+.backs { display: flex; flex-wrap: wrap; gap: 3px; }
 .river { display: flex; flex-wrap: wrap; gap: 3px; min-height: calc(var(--tile-w-xs) * 1.4 + 3px); align-content: flex-start; }
 
 /* ---- tiles ------------------------------------------------------------ */
@@ -153,6 +163,7 @@ button:focus-visible, .tile:focus-visible { outline: 2px solid var(--gold); outl
 }
 .tile.xs { --w: var(--tile-w-xs); }
 .tile.lg { --w: var(--tile-w-lg); }
+.tile.xxs { --w: 14px; }
 .tile .rank { font-size: calc(var(--w) * 0.46); align-self: end; }
 .tile .suit { font-size: calc(var(--w) * 0.42); align-self: start; font-family: var(--font-body); }
 .tile.red { color: var(--red); }
@@ -177,35 +188,63 @@ button.tile.selected { transform: translateY(-12px); box-shadow: 0 calc(var(--w)
   font-family: var(--font-num); font-size: 0.68rem; font-weight: 700;
 }
 
-/* ---- center strip ----------------------------------------------------- */
-.center {
-  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 14px;
-  padding: 10px 14px;
-  border-radius: 10px;
+/* ---- seats around the board ----------------------------------------- */
+.opp.top { width: min(100%, 620px); grid-template-columns: auto auto minmax(0, 1fr) auto; align-items: center; column-gap: 14px; }
+.opp.top .bubble { min-height: 0; }
+.opp.side .seat-head { flex-wrap: wrap; }
+.opp.side .bubble { font-size: 0.76rem; }
+@media (max-width: 760px) {
+  .opp.top { grid-template-columns: auto minmax(0, 1fr); }
+  .opp.top .bubble { grid-column: 1 / -1; }
+  .opp.top .backs { display: none; }
+}
+
+/* ---- the board -------------------------------------------------------- */
+.board {
+  display: grid; gap: 8px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-areas: "rt rt rt" "rl core rr" "rm rm rm";
+  padding: 10px;
+  border-radius: 12px;
   background: var(--felt-deep);
   border: 1px solid var(--felt-line);
+  box-shadow: inset 0 0 0 6px rgba(0, 0, 0, 0.12);
+  min-height: 100%;
 }
-.round, .wallcount { display: flex; align-items: baseline; gap: 6px; }
+.board .river { border-radius: 6px; padding: 3px; transition: background 0.2s; }
+.board .river.turn { background: rgba(224, 176, 74, 0.08); }
+.r-top { grid-area: rt; justify-content: center; }
+.r-me { grid-area: rm; justify-content: center; }
+.r-left, .r-right {
+  grid-row: 2; display: grid; align-content: start; gap: 3px;
+  grid-template-columns: repeat(2, var(--tile-w-xs));
+  grid-auto-rows: calc(var(--tile-w-xs) * 1.36 + 3px);
+}
+.r-left { grid-area: rl; }
+.r-right { grid-area: rr; }
+.r-left .tile.sideways, .r-right .tile.sideways { margin-inline: 0; }
+.core {
+  grid-area: core;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+  text-align: center; min-width: 0; padding: 6px;
+  border-radius: 8px; background: rgba(0, 0, 0, 0.18);
+}
 .label { font-size: 0.72rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
-.big { font-family: var(--font-num); font-size: 1.4rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.big { font-family: var(--font-num); font-size: 1.6rem; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1; }
 .big small { font-size: 0.8rem; color: var(--muted); }
-.pips { display: inline-flex; gap: 3px; align-self: center; }
+.pips { display: inline-flex; gap: 3px; }
 .pips i { width: 6px; height: 6px; border-radius: 1px; background: var(--felt-line); }
 .pips i.done { background: var(--muted); }
 .pips i.now { background: var(--gold); }
-.status { margin: 0; text-align: center; font-size: 0.9rem; min-width: 0; text-wrap: balance; }
-.stack { display: inline-grid; align-self: center; }
-.stack i { display: block; width: 18px; height: 5px; margin-top: -1px; border-radius: 2px; background: var(--bamboo); box-shadow: 0 1px 0 var(--ivory-shade); }
-@media (max-width: 560px) {
-  .center { grid-template-columns: 1fr 1fr; }
-  .status { grid-column: 1 / -1; grid-row: 2; }
-  .wallcount { justify-self: end; }
-  .pips { display: none; }
-}
+.wallcount { display: inline-flex; align-items: center; gap: 5px; margin-top: 4px; }
+.wallcount .num { font-family: var(--font-num); font-weight: 600; }
+.dealer-tag { font-size: 0.72rem; color: var(--muted); }
+.stack { display: inline-grid; }
+.stack i { display: block; width: 16px; height: 4px; margin-top: -1px; border-radius: 2px; background: var(--bamboo); box-shadow: 0 1px 0 var(--ivory-shade); }
+.status { margin: 0; font-size: 0.9rem; min-height: 1.5em; text-wrap: balance; }
 
 /* ---- my seat ---------------------------------------------------------- */
 .seat.me { padding: 12px; gap: 12px; }
-.river.mine { min-height: calc(var(--tile-w-xs) * 1.4); }
 .me-row { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 14px 22px; }
 .me .purse { flex-direction: column; align-items: flex-start; gap: 2px; min-width: 96px; }
 .me .stick { margin-left: 0; margin-top: 4px; }
@@ -295,7 +334,13 @@ button.tile.selected { transform: translateY(-12px); box-shadow: 0 calc(var(--w)
   .pts { font-size: 1.1rem; }
   .opp .near { display: none; }
   .opp .style { display: none; }
-  .bubble { font-size: 0.72rem; }
+  .bubble { font-size: 0.7rem; }
+  .opp.side .bubble { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 6; overflow: hidden; padding: 4px 6px; }
+  .opp.side .name { font-size: 0.82rem; overflow-wrap: anywhere; }
+  .opp.side .glyph { width: 24px; height: 24px; font-size: 0.8rem; }
+  .core .pips { display: none; }
+  .core .big { font-size: 1.3rem; }
+  .board { padding: 6px; gap: 6px; }
   .sheet { padding: 18px; }
 }
 
