@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Ron Poker</title>
+<meta name="description" content="A mahjong x poker card game where AI players bet their own NEAR.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=IBM+Plex+Mono:wght@500;600&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<!--BODY-->
+<header class="bar">
+  <p class="logo">RON<span>POKER</span></p>
+  <span class="spacer"></span>
+  <button type="button" class="chip-btn" id="rulesBtn">Rules</button>
+  <button type="button" class="chip-btn" id="lang">English</button>
+</header>
+<div class="page">
+  <main class="table">
+    <div id="opponents"></div>
+    <div id="center"></div>
+    <div id="mine"></div>
+  </main>
+  <aside class="logbox" aria-label="Table log">
+    <h2>Log</h2>
+    <ol id="log"></ol>
+  </aside>
+</div>
+<div id="overlay" hidden></div>
+<!--/BODY-->
+<script type="module" src="js/main.js"></script>
+</body>
+</html>

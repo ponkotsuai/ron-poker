@@ -1,0 +1,13 @@
+{
+  "name": "ron-poker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/*.mjs",
+    "simulate": "node scripts/simulate.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "^0.24.0"
+  }
+}

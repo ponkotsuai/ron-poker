@@ -1,0 +1,485 @@
+// Browser UI: one human seat against three AI seats.
+
+import { Game } from './game.js';
+import { AIController, PERSONALITIES, moodOf } from './ai.js';
+import { isTenpai, BASE_POINTS, CAT_KEYS, START_POINTS } from './engine.js';
+import { t, getLang, setLang } from './i18n.js';
+
+const NEAR_PER_POINT = 0.1;
+const HUMAN = 0;
+// Turn order is 0 → 1 → 2 → 3. Seat 1 sits to your right, 2 across, 3 to your left.
+const AI_SEATS = { 1: 'tanuki', 2: 'tsuru', 3: 'kitsune' };
+const GLYPH = { tanuki: '狸', tsuru: '鶴', kitsune: '狐' };
+const OPPONENT_ORDER = [3, 2, 1];
+
+const $ = sel => document.querySelector(sel);
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+
+// ---- state -------------------------------------------------------------
+
+const ui = {
+  game: null,
+  log: [],
+  bubbles: {},
+  moods: {},
+  pending: null, // { type: 'discard'|'tsumo'|'ron', resolve, ... }
+  selected: null,
+  lastDiscard: null,
+  thinking: null,
+  overlay: 'intro', // intro | result | final | rules | null
+  overlayBefore: null,
+  result: null,
+  resolveOverlay: null,
+};
+
+function seatName(seat) {
+  if (seat === HUMAN) return t('you');
+  return t(`names.${AI_SEATS[seat]}`);
+}
+
+function cardLabel(c) {
+  if (c.joker) return 'JOKER';
+  const r = { 11: 'J', 12: 'Q', 13: 'K', 14: 'A' }[c.r] || String(c.r);
+  return r + { s: '♠', h: '♥', d: '♦', c: '♣' }[c.s];
+}
+
+function pushLog(text, kind = '') {
+  ui.log.unshift({ text, kind, id: Math.random() });
+  ui.log.length = Math.min(ui.log.length, 80);
+}
+
+function think(seat, key, params = {}) {
+  const p = { ...params };
+  if (p.hand) p.hand = t(`hands.${p.hand}`);
+  if (p.target) p.target = t(`hands.${p.target}`);
+  if (p.card) p.card = cardLabel({ r: parseRank(p.card), s: p.card.slice(-1), joker: false });
+  ui.bubbles[seat] = { key, params: p, at: Date.now() };
+  const [open, close] = getLang() === 'ja' ? ['「', '」'] : [': “', '”'];
+  pushLog(`${seatName(seat)}${open}${t(key, p)}${close}`, 'think');
+}
+
+function parseRank(id) {
+  return Number(id.slice(0, -1));
+}
+
+// ---- controllers -------------------------------------------------------
+
+class HumanController {
+  chooseTsumo(view, ev) {
+    return new Promise(resolve => {
+      ui.pending = { type: 'tsumo', ev, resolve };
+      render();
+    });
+  }
+
+  chooseRon(view, tile, ev, from) {
+    return new Promise(resolve => {
+      ui.pending = { type: 'ron', ev, tile, from, resolve };
+      render();
+    });
+  }
+
+  chooseDiscard(view) {
+    return new Promise(resolve => {
+      ui.selected = null;
+      ui.pending = { type: 'discard', resolve };
+      render();
+    });
+  }
+
+  async beforeAutoDiscard() {
+    render();
+    await sleep(reduceMotion ? 300 : 900);
+  }
+}
+
+class PacedAI {
+  constructor(seat, ai) { this.seat = seat; this.ai = ai; }
+
+  async wrap(fn, ms) {
+    ui.thinking = this.seat;
+    render();
+    await sleep(reduceMotion ? 150 : ms);
+    const out = await fn();
+    ui.thinking = null;
+    return out;
+  }
+
+  chooseTsumo(view, ev) { return this.wrap(() => this.ai.chooseTsumo(view, ev), 450); }
+  chooseRon(view, tile, ev, from) { return this.wrap(() => this.ai.chooseRon(view, tile, ev, from), 450); }
+  chooseDiscard(view) { return this.wrap(() => this.ai.chooseDiscard(view), 750); }
+  beforeAutoDiscard() { return this.wrap(() => null, 550); }
+}
+
+// ---- game wiring -------------------------------------------------------
+
+function newGame() {
+  const seed = (Math.random() * 2 ** 32) >>> 0;
+  const seats = [0, 1, 2, 3].map(seat => {
+    if (seat === HUMAN) return { name: 'you', controller: new HumanController() };
+    const id = AI_SEATS[seat];
+    const ai = new AIController({
+      personality: PERSONALITIES[id],
+      startPoints: START_POINTS,
+      think: (key, params) => think(seat, key, params),
+    });
+    return { name: id, controller: new PacedAI(seat, ai) };
+  });
+  ui.log = [];
+  ui.bubbles = {};
+  ui.moods = {};
+  ui.lastDiscard = null;
+  ui.game = new Game({ seats, seed, onEvent, afterHand: showResult });
+  return ui.game;
+}
+
+function onEvent(type, e) {
+  const g = ui.game;
+  if (type === 'handStart') {
+    ui.lastDiscard = null;
+    pushLog(t('logHandStart', { n: e.handNo + 1, total: g.totalHands, dealer: seatName(e.dealer) }), 'sep');
+    for (const seat of [1, 2, 3]) {
+      const mood = moodOf(g.points[seat], START_POINTS);
+      if (mood !== (ui.moods[seat] || 'steady') && mood !== 'steady') {
+        think(seat, `thinkMood.${mood}`, { points: g.points[seat] });
+      }
+      ui.moods[seat] = mood;
+    }
+  }
+  if (type === 'discard') {
+    ui.lastDiscard = { seat: e.seat, id: e.card.id };
+    const key = e.riichi ? 'logRiichi' : 'logDiscard';
+    pushLog(t(key, { name: seatName(e.seat), card: cardLabel(e.card) }), e.riichi ? 'riichi' : '');
+  }
+  if (type === 'win') {
+    const params = { name: seatName(e.winner), hand: t(`hands.${e.ev.key}`), points: e.ev.points };
+    if (e.type === 'ron') pushLog(t('logRon', { ...params, loser: seatName(e.loser) }), 'win');
+    else pushLog(t('logTsumo', params), 'win');
+  }
+  if (type === 'exhausted') pushLog(t('logExhausted'), 'sep');
+  render();
+}
+
+function showResult(record) {
+  return new Promise(resolve => {
+    ui.result = record;
+    ui.overlay = 'result';
+    ui.resolveOverlay = resolve;
+    render();
+    $('#overlay .primary')?.focus();
+  });
+}
+
+async function startGame() {
+  const g = newGame();
+  ui.overlay = null;
+  render();
+  await g.play();
+  ui.overlay = 'final';
+  render();
+}
+
+// ---- rendering ---------------------------------------------------------
+
+function tile(c, opts = {}) {
+  const cls = ['tile'];
+  if (opts.size) cls.push(opts.size);
+  if (opts.back) {
+    cls.push('back');
+    return `<span class="${cls.join(' ')}" aria-hidden="true"></span>`;
+  }
+  if (c.joker) cls.push('joker');
+  else if (c.s === 'h' || c.s === 'd') cls.push('red');
+  if (opts.sideways) cls.push('sideways');
+  if (opts.fresh) cls.push('fresh');
+  if (opts.selected) cls.push('selected');
+  if (opts.win) cls.push('win');
+  const inner = c.joker
+    ? `<span class="j-word">JOKER</span><span class="j-mult">×2</span>`
+    : `<span class="rank">${cardLabel(c).slice(0, -1)}</span><span class="suit">${cardLabel(c).slice(-1)}</span>`;
+  const mark = opts.mark ? `<span class="mark" title="Riichi">R</span>` : '';
+  if (opts.button) {
+    return `<button type="button" class="${cls.join(' ')}" data-index="${opts.index}" aria-label="${cardLabel(c)}${opts.mark ? ' (riichi)' : ''}">${inner}${mark}</button>`;
+  }
+  return `<span class="${cls.join(' ')}" aria-label="${cardLabel(c)}">${inner}${mark}</span>`;
+}
+
+function river(p, seat) {
+  return p.discards.map((c, i) => tile(c, {
+    size: 'xs',
+    sideways: p.riichiAt === i,
+    fresh: ui.lastDiscard && ui.lastDiscard.seat === seat && ui.lastDiscard.id === c.id,
+  })).join('');
+}
+
+function riichiStick(on) {
+  return on ? `<span class="stick" title="Riichi"><span></span></span>` : '';
+}
+
+function opponentPanel(seat) {
+  const g = ui.game;
+  const id = AI_SEATS[seat];
+  const p = g ? g.players[seat] : { hand: [1, 2, 3, 4], discards: [], riichi: false };
+  const pts = g ? g.points[seat] : START_POINTS;
+  const mood = moodOf(pts, START_POINTS);
+  const bubble = ui.bubbles[seat];
+  const bubbleText = bubble ? t(bubble.key, bubble.params) : t(`bios.${id}`);
+  const isDealer = g && g.dealer === seat;
+  const active = g && !g.over && g.turn === seat;
+  return `
+    <section class="seat opp ${active ? 'active' : ''} ${p.riichi ? 'in-riichi' : ''}" aria-label="${seatName(seat)}">
+      <header class="seat-head">
+        <span class="glyph">${GLYPH[id]}</span>
+        <span class="who">
+          <span class="name">${seatName(seat)}${isDealer ? `<span class="dealer">${t('dealer')}</span>` : ''}</span>
+          <span class="style">${t(`styles.${id}`)}</span>
+        </span>
+        ${riichiStick(p.riichi)}
+      </header>
+      <div class="purse">
+        <span class="pts">${pts}<small>${t('pts')}</small></span>
+        <span class="near">${(pts * NEAR_PER_POINT).toFixed(1)} NEAR</span>
+        <span class="mood ${mood}">${t(`moods.${mood}`)}</span>
+      </div>
+      <p class="bubble ${ui.thinking === seat ? 'thinking' : ''}">${ui.thinking === seat ? '<span class="dots"><i></i><i></i><i></i></span>' : bubbleText}</p>
+      <div class="backs">${p.hand.map(() => tile(null, { back: true, size: 'xs' })).join('')}</div>
+      <div class="river">${river(p, seat)}</div>
+    </section>`;
+}
+
+function centerStrip() {
+  const g = ui.game;
+  const handNo = g ? Math.min(g.handNo + 1, g.totalHands) : 1;
+  const total = g ? g.totalHands : 8;
+  const wall = g ? g.wall.length : 38;
+  let status = '';
+  if (ui.pending?.type === 'discard') status = ui.selected != null ? t('selected', { card: cardLabel(g.players[HUMAN].hand[ui.selected]) }) : t('pickTile');
+  else if (ui.pending?.type === 'tsumo') status = t('canTsumo', { hand: t(`hands.${ui.pending.ev.key}`), points: ui.pending.ev.points });
+  else if (ui.pending?.type === 'ron') status = t('canRon', { name: seatName(ui.pending.from), card: cardLabel(ui.pending.tile), hand: t(`hands.${ui.pending.ev.key}`), points: ui.pending.ev.points });
+  else if (g && g.players[HUMAN].riichi && g.turn === HUMAN) status = t('riichiLocked');
+  else if (ui.thinking != null) status = t('waitingFor', { name: seatName(ui.thinking) });
+  const pips = Array.from({ length: total }, (_, i) => `<i class="${i < handNo - 1 ? 'done' : i === handNo - 1 ? 'now' : ''}"></i>`).join('');
+  return `
+    <div class="center">
+      <div class="round">
+        <span class="label">${t('hand')}</span>
+        <span class="big">${handNo}<small>/${total}</small></span>
+        <span class="pips" aria-hidden="true">${pips}</span>
+      </div>
+      <p class="status" role="status">${status}</p>
+      <div class="wallcount">
+        <span class="stack" aria-hidden="true"><i></i><i></i><i></i></span>
+        <span><span class="label">${t('wall')}</span> <span class="big">${wall}</span></span>
+      </div>
+    </div>`;
+}
+
+function myArea() {
+  const g = ui.game;
+  const me = g ? g.players[HUMAN] : { hand: [], discards: [], riichi: false };
+  const pts = g ? g.points[HUMAN] : START_POINTS;
+  const pending = ui.pending;
+  const discarding = pending?.type === 'discard';
+  const hand = me.hand.map((c, index) => ({ c, index }));
+  const drawn = g && g.turn === HUMAN && hand.length === 5 ? hand.pop() : null;
+  hand.sort((a, b) => (a.c.r - b.c.r) || a.c.s.localeCompare(b.c.s));
+  const marks = {};
+  if (discarding) {
+    for (let i = 0; i < me.hand.length; i++) marks[i] = isTenpai(me.hand.filter((_, j) => j !== i));
+  }
+  const winSet = pending && pending.type !== 'discard';
+  const render1 = ({ c, index }) => tile(c, {
+    size: 'lg',
+    button: discarding,
+    index,
+    selected: ui.selected === index,
+    mark: discarding && marks[index],
+    win: winSet,
+  });
+  let actions = '';
+  if (discarding) {
+    const sel = ui.selected;
+    const canRiichi = sel != null && marks[sel];
+    actions = `
+      <button type="button" class="act" data-act="discard" ${sel == null ? 'disabled' : ''}>${t('discard')}</button>
+      <button type="button" class="act gold" data-act="riichi" ${canRiichi ? '' : 'disabled'}>${t('riichiDiscard')}</button>`;
+  } else if (pending?.type === 'tsumo') {
+    actions = `
+      <button type="button" class="act gold" data-act="yes">${t('tsumo')}</button>
+      ${me.riichi ? '' : `<button type="button" class="act" data-act="no">${t('keepGoing')}</button>`}`;
+  } else if (pending?.type === 'ron') {
+    actions = `
+      <button type="button" class="act gold" data-act="yes">${t('ron')}</button>
+      <button type="button" class="act" data-act="no">${t('pass')}</button>`;
+  }
+  const ronTile = pending?.type === 'ron' ? `<span class="plus">+</span>${tile(pending.tile, { size: 'lg', win: true })}` : '';
+  const isDealer = g && g.dealer === HUMAN;
+  return `
+    <section class="seat me ${g && !g.over && g.turn === HUMAN ? 'active' : ''} ${me.riichi ? 'in-riichi' : ''}" aria-label="${t('you')}">
+      <div class="river mine">${river(me, HUMAN)}</div>
+      <div class="me-row">
+        <div class="purse">
+          <span class="name">${t('you')}${isDealer ? `<span class="dealer">${t('dealer')}</span>` : ''}</span>
+          <span class="pts">${pts}<small>${t('pts')}</small></span>
+          <span class="near">${(pts * NEAR_PER_POINT).toFixed(1)} NEAR</span>
+          ${riichiStick(me.riichi)}
+        </div>
+        <div class="hand" role="group" aria-label="hand">
+          ${hand.map(render1).join('')}
+          ${drawn ? `<span class="gap"></span>${render1(drawn)}` : ''}
+          ${ronTile}
+        </div>
+      </div>
+      <div class="actions">${actions}</div>
+    </section>`;
+}
+
+function logPanel() {
+  return ui.log.map(e => `<li class="${e.kind}">${escapeHtml(e.text)}</li>`).join('');
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
+}
+
+function scoreTable() {
+  return `<table class="scores"><tbody>${Object.entries(BASE_POINTS).map(([cat, pts]) => `
+    <tr><td>${t(`hands.${CAT_KEYS[cat]}`)}</td><td class="num">${pts}</td></tr>`).join('')}
+    <tr class="jk"><td>JOKER</td><td class="num">×2</td></tr></tbody></table>`;
+}
+
+function introOverlay() {
+  return `
+    <div class="sheet intro">
+      <p class="eyebrow">NEAR HACKATHON · testnet</p>
+      <h1 class="logo">RON<span>POKER</span></h1>
+      <p class="tagline">${t('tagline')}</p>
+      <ul class="rivals">
+        ${[1, 2, 3].map(seat => {
+          const id = AI_SEATS[seat];
+          return `<li><span class="glyph">${GLYPH[id]}</span><span><b>${seatName(seat)}</b> <em>${t(`styles.${id}`)}</em><br>${t(`bios.${id}`)}</span></li>`;
+        }).join('')}
+      </ul>
+      <p class="note">${t('startNote')}</p>
+      <div class="row">
+        <button type="button" class="act gold primary" data-act="start">${t('start')}</button>
+        <button type="button" class="act" data-act="rules">${t('rules')}</button>
+      </div>
+    </div>`;
+}
+
+function resultOverlay() {
+  const r = ui.result;
+  const g = ui.game;
+  if (r.type === 'exhausted') {
+    return `<div class="sheet result"><p class="eyebrow">${t('hand')} ${r.handNo + 1}</p><h2>${t('resultExhausted')}</h2>
+      <p>${t('logExhausted')}</p><div class="row"><button type="button" class="act gold primary" data-act="next">${t('nextHand')}</button></div></div>`;
+  }
+  const lines = r.transfers.filter(x => x.amount > 0).map(x => `<li>${t('paid', { from: seatName(x.from), to: seatName(x.to), amount: x.amount })}</li>`).join('');
+  return `
+    <div class="sheet result">
+      <p class="eyebrow">${t('hand')} ${r.handNo + 1} · ${r.type === 'ron' ? t('resultRon') : t('resultTsumo')}</p>
+      <h2>${seatName(r.winner)} — ${t(`hands.${r.ev.key}`)}</h2>
+      <div class="hand show">${r.hand.map(c => tile(c, { size: 'lg', win: true })).join('')}</div>
+      <p class="calc"><span>${r.ev.base}</span>${r.ev.jokers ? ` × <span class="gold-text">${t('jokerBonus', { mult: r.ev.mult })}</span>` : ''}
+        ${r.type === 'ron' ? ' × 3' : ''} = <b>${r.ev.points * (r.type === 'ron' ? 3 : 1)}${t('pts')}</b>${r.type === 'tsumo' ? ` <small>(${t('everyonePays')})</small>` : ''}</p>
+      <ul class="transfers">${lines}</ul>
+      <ul class="standings">${standings(g.points)}</ul>
+      <div class="row"><button type="button" class="act gold primary" data-act="next">${t('nextHand')}</button></div>
+    </div>`;
+}
+
+function standings(points, payout = false) {
+  return [0, 1, 2, 3]
+    .map(seat => ({ seat, pts: points[seat] }))
+    .sort((a, b) => b.pts - a.pts)
+    .map(({ seat, pts }, i) => {
+      const diff = pts - START_POINTS;
+      const near = (pts * NEAR_PER_POINT).toFixed(1);
+      return `<li class="${seat === HUMAN ? 'me' : ''}"><span class="place">${i + 1}</span><span class="nm">${seatName(seat)}</span>
+        <span class="num">${pts}${t('pts')}</span><span class="num diff ${diff > 0 ? 'up' : diff < 0 ? 'down' : ''}">${diff > 0 ? '+' : ''}${diff}</span>
+        ${payout ? `<span class="num near">${near} NEAR</span>` : ''}</li>`;
+    }).join('');
+}
+
+function finalOverlay() {
+  const g = ui.game;
+  return `
+    <div class="sheet final">
+      <p class="eyebrow">${t('payout')}</p>
+      <h2>${t('finalTitle')}</h2>
+      <ul class="standings">${standings(g.points, true)}</ul>
+      <p class="note">${t('seed')}: <code>${g.seed}</code></p>
+      <div class="row"><button type="button" class="act gold primary" data-act="start">${t('playAgain')}</button></div>
+    </div>`;
+}
+
+function rulesOverlay() {
+  return `
+    <div class="sheet rules">
+      <h2>${t('rulesTitle')}</h2>
+      <ol>${t('rulesBody').map(x => `<li>${x}</li>`).join('')}</ol>
+      <h3>${t('scoreTable')}</h3>
+      ${scoreTable()}
+      <div class="row"><button type="button" class="act primary" data-act="closeRules">${t('close')}</button></div>
+    </div>`;
+}
+
+function render() {
+  document.documentElement.lang = getLang();
+  $('#lang').textContent = t('lang');
+  $('#rulesBtn').textContent = t('rules');
+  $('#opponents').innerHTML = OPPONENT_ORDER.map(opponentPanel).join('');
+  $('#center').innerHTML = centerStrip();
+  $('#mine').innerHTML = myArea();
+  $('#log').innerHTML = logPanel();
+  const ov = $('#overlay');
+  const view = { intro: introOverlay, result: resultOverlay, final: finalOverlay, rules: rulesOverlay }[ui.overlay];
+  ov.hidden = !view;
+  ov.innerHTML = view ? view() : '';
+}
+
+// ---- input -------------------------------------------------------------
+
+function resolvePending(value) {
+  const p = ui.pending;
+  if (!p) return;
+  ui.pending = null;
+  ui.selected = null;
+  p.resolve(value);
+  render();
+}
+
+document.addEventListener('click', ev => {
+  const tileBtn = ev.target.closest('button.tile[data-index]');
+  if (tileBtn && ui.pending?.type === 'discard') {
+    const i = Number(tileBtn.dataset.index);
+    if (ui.selected === i) resolvePending({ index: i, riichi: false });
+    else { ui.selected = i; render(); }
+    return;
+  }
+  const act = ev.target.closest('[data-act]')?.dataset.act;
+  if (!act) return;
+  if (act === 'start') startGame();
+  if (act === 'rules') { ui.overlayBefore = ui.overlay; ui.overlay = 'rules'; render(); }
+  if (act === 'closeRules') { ui.overlay = ui.overlayBefore; ui.overlayBefore = null; render(); }
+  if (act === 'next') { ui.overlay = null; const r = ui.resolveOverlay; ui.resolveOverlay = null; render(); r?.(); }
+  if (act === 'discard' && ui.selected != null) resolvePending({ index: ui.selected, riichi: false });
+  if (act === 'riichi' && ui.selected != null) resolvePending({ index: ui.selected, riichi: true });
+  if (act === 'yes') resolvePending(true);
+  if (act === 'no') resolvePending(false);
+});
+
+$('#lang').addEventListener('click', () => {
+  setLang(getLang() === 'ja' ? 'en' : 'ja');
+  render();
+});
+$('#rulesBtn').addEventListener('click', () => {
+  if (ui.overlay === 'rules') return;
+  ui.overlayBefore = ui.overlay;
+  ui.overlay = 'rules';
+  render();
+});
+
+render();

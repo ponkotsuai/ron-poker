@@ -1,0 +1,177 @@
+// UI strings in English and Japanese.
+
+export const STRINGS = {
+  en: {
+    tagline: 'Mahjong rules. Poker hands. Real stakes.',
+    hand: 'Hand',
+    wall: 'Wall',
+    dealer: 'Dealer',
+    rules: 'Rules',
+    close: 'Close',
+    you: 'You',
+    start: 'Sit down and play',
+    startNote: 'Testnet preview. Each seat buys in for 3 NEAR (30 points). No house: points move only between players.',
+    buyIn: 'Buy-in 30 pts = 3 NEAR',
+    tsumo: 'Tsumo!',
+    ron: 'Ron!',
+    pass: 'Pass',
+    keepGoing: 'Keep drawing',
+    discard: 'Discard',
+    riichiDiscard: 'Riichi + discard',
+    pickTile: 'Tap a tile to discard it. Tiles marked R leave you ready (riichi).',
+    selected: 'Selected: {card}',
+    riichiLocked: 'Riichi: your hand is locked. Waiting for your tile…',
+    canTsumo: 'Your draw completes {hand} for {points} pts.',
+    canRon: '{name} threw {card}. Ron for {hand}, {points} pts?',
+    waitingFor: '{name} is thinking…',
+    moods: { survival: 'Defensive', steady: 'Steady', comfortable: 'Pushing' },
+    styles: { tanuki: 'Gambler', tsuru: 'Accountant', kitsune: 'Shapeshifter' },
+    bios: {
+      tanuki: 'Chases big hands and hugs the joker for double points.',
+      tsuru: 'Counts every point. Folds early when someone calls riichi.',
+      kitsune: 'Changes style with its bankroll: bold when rich, stubborn when poor.',
+    },
+    names: { tanuki: 'Tanuki', tsuru: 'Tsuru', kitsune: 'Kitsune' },
+    hands: {
+      trips: 'Three of a Kind', straight: 'Straight', flush: 'Flush', fullHouse: 'Full House',
+      quads: 'Four of a Kind', straightFlush: 'Straight Flush', royal: 'Royal Flush',
+    },
+    logDiscard: '{name} threw {card}',
+    logRiichi: '{name} declared riichi with {card}',
+    logTsumo: '{name} won by tsumo: {hand}, {points} pts',
+    logRon: '{name} won by ron off {loser}: {hand}, {points} pts',
+    logExhausted: 'Wall empty. No winner, no payment.',
+    logHandStart: 'Hand {n} of {total}. Dealer: {dealer}.',
+    thinkTsumo: 'Drew it. {hand} for {points}.',
+    thinkRon: 'That one is mine. {hand} for {points}.',
+    thinkRiichi: 'Riichi. Waiting on {waits} rank(s), up to {points} pts.',
+    thinkJokerShield: 'Riichi on the table. The joker is my safe throw.',
+    thinkSafe: 'Too risky to push. Throwing {card}, which is safe.',
+    thinkKeepJoker: 'Keeping the joker. Double points if this lands.',
+    thinkBuild: 'Building toward {target}.',
+    thinkMood: { survival: 'Down to {points}. Playing tight now.', comfortable: 'Up to {points}. Time to swing big.' },
+    resultTsumo: 'Tsumo',
+    resultRon: 'Ron',
+    resultExhausted: 'Exhausted wall',
+    jokerBonus: 'Joker ×{mult}',
+    paid: '{from} → {to}: {amount} pts',
+    everyonePays: 'Everyone pays the winner',
+    nextHand: 'Next hand',
+    finalTitle: 'Table closed',
+    payout: 'Payout',
+    playAgain: 'Play again',
+    pts: 'pts',
+    seed: 'Shuffle seed',
+    rulesTitle: 'How to play',
+    rulesBody: [
+      'Four players, 52 cards plus 2 jokers. Everyone holds 4 cards.',
+      'On your turn, draw 1. If your 5 cards make Three of a Kind or better, call Tsumo. Otherwise throw 1 away.',
+      'When your 4 cards are one card from winning, you may declare Riichi. Your hand locks, and only riichi players can win off someone else\'s discard (Ron).',
+      'Furiten: you cannot Ron on a rank you have already thrown this hand.',
+      'Jokers are not wild. A winning hand holding a joker scores double (two jokers: ×4), and nobody can Ron on a joker, so it doubles as a safe throw.',
+      'Ron: the thrower pays points ×3. Tsumo: the other three each pay points ×1.',
+      '8 hands per game, or until someone hits 0. Final points are paid out in NEAR (1 pt = 0.1 NEAR).',
+    ],
+    scoreTable: 'Score table',
+    lang: '日本語',
+  },
+  ja: {
+    tagline: '麻雀のルールで、ポーカーの役をつくる。',
+    hand: '局',
+    wall: '山',
+    dealer: '親',
+    rules: 'ルール',
+    close: '閉じる',
+    you: 'あなた',
+    start: '卓につく',
+    startNote: 'テストネット版。参加費は1人3 NEAR（持ち点30点）。胴元なしで、点数はプレイヤー同士の間だけを動きます。',
+    buyIn: '参加費 30点 = 3 NEAR',
+    tsumo: 'ツモ！',
+    ron: 'ロン！',
+    pass: '見送る',
+    keepGoing: '続ける',
+    discard: '捨てる',
+    riichiDiscard: 'リーチして捨てる',
+    pickTile: '捨てるカードをタップ。Rの印があるカードを捨てるとリーチできます。',
+    selected: '選択中：{card}',
+    riichiLocked: 'リーチ中：手札は固定です。上がりカードを待っています…',
+    canTsumo: '引いたカードで{hand}（{points}点）が完成しました。',
+    canRon: '{name}が{card}を捨てました。{hand}（{points}点）でロンしますか？',
+    waitingFor: '{name}が考え中…',
+    moods: { survival: '守り', steady: '通常', comfortable: '攻め' },
+    styles: { tanuki: 'ギャンブラー', tsuru: '堅実派', kitsune: '変幻自在' },
+    bios: {
+      tanuki: '高い役を狙い、ジョーカーを抱えて2倍を狙う。',
+      tsuru: '1点も無駄にしない。リーチが入るとすぐ守りに回る。',
+      kitsune: '懐具合で打ち方が変わる。余裕があれば大胆、苦しければ粘り強い。',
+    },
+    names: { tanuki: 'タヌキ', tsuru: 'ツル', kitsune: 'キツネ' },
+    hands: {
+      trips: 'スリーカード', straight: 'ストレート', flush: 'フラッシュ', fullHouse: 'フルハウス',
+      quads: 'フォーカード', straightFlush: 'ストレートフラッシュ', royal: 'ロイヤルストレートフラッシュ',
+    },
+    logDiscard: '{name}：{card}を捨てた',
+    logRiichi: '{name}：{card}でリーチ',
+    logTsumo: '{name}のツモ上がり：{hand}　{points}点',
+    logRon: '{name}が{loser}からロン：{hand}　{points}点',
+    logExhausted: '山がなくなりました。流局（支払いなし）',
+    logHandStart: '第{n}局／全{total}局。親は{dealer}',
+    thinkTsumo: '引いた！{hand}で{points}点。',
+    thinkRon: 'それ、もらう。{hand}で{points}点。',
+    thinkRiichi: 'リーチ。待ちは{waits}種類、最高{points}点。',
+    thinkJokerShield: 'リーチが入った。ジョーカーを安全牌として切る。',
+    thinkSafe: 'ここは押せない。安全な{card}を切る。',
+    thinkKeepJoker: 'ジョーカーは手放さない。上がれば2倍。',
+    thinkBuild: '{target}を狙っていく。',
+    thinkMood: { survival: '残り{points}点。ここからは守る。', comfortable: '{points}点ある。大きく勝負する。' },
+    resultTsumo: 'ツモ',
+    resultRon: 'ロン',
+    resultExhausted: '流局',
+    jokerBonus: 'ジョーカー ×{mult}',
+    paid: '{from} → {to}：{amount}点',
+    everyonePays: '全員が上がった人に支払い',
+    nextHand: '次の局へ',
+    finalTitle: '終局',
+    payout: '払い戻し',
+    playAgain: 'もう一度遊ぶ',
+    pts: '点',
+    seed: 'シャッフルのシード',
+    rulesTitle: '遊び方',
+    rulesBody: [
+      '4人対戦。トランプ52枚とジョーカー2枚を使い、手札は各4枚。',
+      '自分の番に1枚引き、5枚でスリーカード以上ができていればツモ上がり。できていなければ1枚捨てる。',
+      'あと1枚で上がれる状態ならリーチを宣言できる。手札は固定され、他人の捨て札でロンできるのはリーチした人だけ。',
+      'フリテン：その局で自分が捨てた数字では、ロンできない。',
+      'ジョーカーはワイルドではない。上がり手に入っていれば点数2倍（2枚なら4倍）。ジョーカーでは誰もロンできないので、安全な捨て札にもなる。',
+      'ロン：捨てた人が点数×3を払う。ツモ：他の3人が点数×1ずつ払う。',
+      '1ゲーム8局。誰かが0点になったら終了。最終持ち点をNEARで払い戻す（1点＝0.1 NEAR）。',
+    ],
+    scoreTable: '点数表',
+    lang: 'English',
+  },
+};
+
+let lang = 'ja';
+try {
+  const saved = localStorage.getItem('ronpoker.lang');
+  if (saved === 'en' || saved === 'ja') lang = saved;
+  else if (!/^ja/i.test(navigator.language || '')) lang = 'en';
+} catch { /* storage unavailable */ }
+
+export function getLang() { return lang; }
+export function setLang(l) {
+  lang = l;
+  try { localStorage.setItem('ronpoker.lang', l); } catch { /* ignore */ }
+}
+
+export function t(path, params = {}) {
+  const parts = path.split('.');
+  let v = STRINGS[lang];
+  for (const p of parts) v = v?.[p];
+  if (v == null) {
+    v = STRINGS.en;
+    for (const p of parts) v = v?.[p];
+  }
+  if (typeof v !== 'string') return v;
+  return v.replace(/\{(\w+)\}/g, (_, k) => (params[k] ?? `{${k}}`));
+}
