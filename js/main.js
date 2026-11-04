@@ -619,3 +619,6 @@ $('#rulesBtn').addEventListener('click', () => {
 });
 
 render();
+
+// Developer hook: with #debug in the address, expose the chain helpers for manual testing.
+if (!PREVIEW && location.hash === '#debug') window.ronDebug = { chain, ui };
