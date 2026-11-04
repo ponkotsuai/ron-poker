@@ -202,6 +202,7 @@ async function refreshBankrolls() {
   const c = ui.chain;
   if (!c) return;
   const ids = { human: c.human, ...Object.fromEntries(Object.entries(chain.AI_ACCOUNTS).map(([k, v]) => [k, v.accountId])) };
+  if (!c.human) delete ids.human;
   for (const [k, id] of Object.entries(ids)) {
     try { c.bankrolls[k] = await chain.bankrollOf(id); } catch { /* keep last */ }
   }
@@ -213,12 +214,12 @@ async function startChainGame() {
   ui.overlay = 'chain';
   render();
   try {
-    if (!chain.aiReady()) throw new Error(t('notConfigured'));
     chainStep('chainConnecting');
     const human = (await chain.currentAccount()) || (await chain.connectWallet());
     if (!human) throw new Error(t('noAccount'));
     ui.chain.human = human;
     chainStep('chainConnected', { account: human });
+    await chain.setupAgents(chainStep);
     await refreshBankrolls();
     const seed = await chain.newSeed();
     ui.chain.seed = seed;
@@ -337,7 +338,7 @@ function opponentPanel(seat, side) {
         <span class="pts">${pts}<small>${t('pts')}</small></span>
         <span class="near">${(pts * NEAR_PER_POINT).toFixed(1)} NEAR</span>
         <span class="mood ${mood}">${t(`moods.${mood}`)}</span>
-        ${ui.chain && ui.chain.bankrolls[id] != null ? `<span class="wallet" title="${chain.AI_ACCOUNTS[id].accountId}">${t('bankroll')} ${chain.yoctoToNear(ui.chain.bankrolls[id], 1)} NEAR</span>` : ''}
+        ${ui.chain && ui.chain.bankrolls[id] != null ? `<span class="wallet" title="${chain.AI_ACCOUNTS[id]?.accountId || ''}">${t('bankroll')} ${chain.yoctoToNear(ui.chain.bankrolls[id], 1)} NEAR</span>` : ''}
         ${riichiStick(p.riichi)}
       </div>
       <p class="bubble ${ui.thinking === seat ? 'thinking' : ''}">${ui.thinking === seat ? '<span class="dots"><i></i><i></i><i></i></span>' : bubbleText}</p>

@@ -1,13 +1,18 @@
 // On-chain table flow on NEAR testnet.
 //  - The human connects Meteor Wallet and signs: join (3 NEAR buy-in), submit_result, withdraw.
-//  - Each AI signs its own calls with its own function-call key: create_table, join, submit_result.
+//  - Each AI has its own testnet account and plays with a function-call key that can only
+//    create/join tables and sign scoresheets on the table contract. It cannot move or withdraw NEAR.
+//  - The AI accounts are created in this browser on first play (you are their sponsor).
+//    Their keys are kept in this browser's storage and never sent anywhere.
 // Nobody holds the pot: the contract pays out only when all four scoresheets match.
 
-import { Account, JsonRpcProvider, KeyPairSigner } from 'near-api-js';
+import { Account, JsonRpcProvider, KeyPair, KeyPairSigner } from 'near-api-js';
 import { actionCreators } from '@near-js/transactions';
 import { setupWalletSelector } from '@near-wallet-selector/core';
 import { setupMeteorWallet } from '@near-wallet-selector/meteor-wallet';
-import { NETWORK, RPC_URL, EXPLORER, CONTRACT_ID, BUY_IN_YOCTO, AI_ACCOUNTS } from './config.js';
+import {
+  NETWORK, RPC_URL, EXPLORER, CONTRACT_ID, BUY_IN_YOCTO, FAUCET_URL, AI_BANKROLL_YOCTO, AI_METHODS, AI_GAS_ALLOWANCE_YOCTO,
+} from './config.js';
 
 const GAS = 30_000_000_000_000n;
 const provider = new JsonRpcProvider({ url: RPC_URL });
@@ -16,8 +21,67 @@ let selector = null;
 export const explorerTx = hash => `${EXPLORER}/txns/${hash}`;
 export const explorerAccount = id => `${EXPLORER}/address/${id}`;
 
-export function aiReady() {
-  return Object.values(AI_ACCOUNTS).every(a => a.key);
+const AGENTS_KEY = 'ronpoker.agents.v1';
+const AI_IDS = ['tanuki', 'tsuru', 'kitsune'];
+// { tanuki: { accountId, sponsorKey, playKey }, ... } — sponsorKey is full access (funding only),
+// playKey is the restricted key the AI plays with.
+export const AI_ACCOUNTS = {};
+
+function loadAgents() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(AGENTS_KEY) || '{}');
+    for (const id of AI_IDS) if (saved[id]) AI_ACCOUNTS[id] = saved[id];
+  } catch { /* storage unavailable: agents are created fresh */ }
+}
+function saveAgents() {
+  try { localStorage.setItem(AGENTS_KEY, JSON.stringify(AI_ACCOUNTS)); } catch { /* ignore */ }
+}
+loadAgents();
+
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+async function accountExists(accountId) {
+  try { await provider.viewAccount({ accountId, finality: 'final' }); return true; } catch { return false; }
+}
+
+/**
+ * Make sure each AI has a funded testnet account, a restricted playing key, and at least one buy-in
+ * in its bankroll. Creates missing agents through the testnet faucet.
+ */
+export async function setupAgents(onStep) {
+  for (const id of AI_IDS) {
+    let agent = AI_ACCOUNTS[id];
+    if (!agent || !(await accountExists(agent.accountId))) {
+      const sponsor = KeyPair.fromRandom('ed25519');
+      const accountId = `${id}-${crypto.getRandomValues(new Uint32Array(1))[0].toString(36)}.testnet`;
+      const r = await fetch(FAUCET_URL, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ newAccountId: accountId, newAccountPublicKey: sponsor.getPublicKey().toString() }),
+      });
+      if (!r.ok) throw new Error(`testnet faucet refused ${accountId} (${r.status})`);
+      agent = { accountId, sponsorKey: sponsor.toString(), playKey: null };
+      AI_ACCOUNTS[id] = agent;
+      saveAgents();
+      for (let i = 0; i < 10 && !(await accountExists(accountId)); i++) await sleep(1000);
+      onStep('chainAgentCreated', { who: id, account: accountId });
+    }
+    const sponsorAccount = new Account(agent.accountId, provider, KeyPairSigner.fromSecretKey(agent.sponsorKey));
+    if (!agent.playKey) {
+      const play = KeyPair.fromRandom('ed25519');
+      await sponsorAccount.addFunctionCallAccessKey({
+        publicKey: play.getPublicKey(), contractId: CONTRACT_ID, methodNames: AI_METHODS, allowance: AI_GAS_ALLOWANCE_YOCTO,
+      });
+      agent.playKey = play.toString();
+      saveAgents();
+      onStep('chainAgentKey', { who: id });
+    }
+    if ((await bankrollOf(agent.accountId)) < BUY_IN_YOCTO) {
+      const r = await sponsorAccount.callFunctionRaw({
+        contractId: CONTRACT_ID, methodName: 'deposit', args: {}, deposit: AI_BANKROLL_YOCTO, gas: GAS,
+      });
+      onStep('chainAgentFunded', { who: id, hash: r.transaction.hash });
+    }
+  }
 }
 
 export async function view(method, args = {}) {
@@ -74,9 +138,10 @@ async function humanCall(method, args, deposit = 0n) {
 
 // ---- AI agents ---------------------------------------------------------
 
+// The AI plays with its restricted key only.
 function aiAccount(id) {
   const a = AI_ACCOUNTS[id];
-  return new Account(a.accountId, provider, KeyPairSigner.fromSecretKey(a.key));
+  return new Account(a.accountId, provider, KeyPairSigner.fromSecretKey(a.playKey));
 }
 
 async function aiCall(id, method, args) {
@@ -152,4 +217,4 @@ export async function abortTable(tableId) {
   return humanCall('abort', { table_id: tableId });
 }
 
-export { CONTRACT_ID, AI_ACCOUNTS };
+export { CONTRACT_ID };
