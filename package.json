@@ -5,9 +5,18 @@
   "type": "module",
   "scripts": {
     "test": "node --test tests/*.mjs",
-    "simulate": "node scripts/simulate.mjs"
+    "simulate": "node scripts/simulate.mjs",
+    "build": "node scripts/build.mjs"
   },
   "devDependencies": {
     "esbuild": "^0.24.0"
+  },
+  "dependencies": {
+    "@near-wallet-selector/core": "10.1.4",
+    "@near-wallet-selector/meteor-wallet": "10.1.4",
+    "buffer": "6.0.3",
+    "near-api-js": "7.3.1",
+    "process": "0.11.10",
+    "util": "0.12.5"
   }
 }

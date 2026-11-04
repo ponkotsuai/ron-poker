@@ -4,8 +4,12 @@ import { Game } from './game.js';
 import { AIController, PERSONALITIES, moodOf } from './ai.js';
 import { isTenpai, BASE_POINTS, CAT_KEYS, START_POINTS } from './engine.js';
 import { t, getLang, setLang } from './i18n.js';
+import * as chain from './chain.js';
 
 const NEAR_PER_POINT = 0.1;
+// Set at build time. The chat preview cannot reach NEAR, so it offers practice mode only.
+const PREVIEW = typeof __PREVIEW__ !== 'undefined' && __PREVIEW__;
+const LIVE_URL = 'https://ponkotsuai.github.io/ron-poker/';
 const HUMAN = 0;
 // Turn order is 0 → 1 → 2 → 3. Seat 1 sits to your right, 2 across, 3 to your left.
 const AI_SEATS = { 1: 'tanuki', 2: 'tsuru', 3: 'kitsune' };
@@ -113,8 +117,7 @@ class PacedAI {
 
 // ---- game wiring -------------------------------------------------------
 
-function newGame() {
-  const seed = (Math.random() * 2 ** 32) >>> 0;
+function newGame(seed = (Math.random() * 2 ** 32) >>> 0) {
   const seats = [0, 1, 2, 3].map(seat => {
     if (seat === HUMAN) return { name: 'you', controller: new HumanController() };
     const id = AI_SEATS[seat];
@@ -171,12 +174,107 @@ function showResult(record) {
 }
 
 async function startGame() {
+  ui.chain = null;
   const g = newGame();
   ui.overlay = null;
   render();
   await g.play();
   ui.overlay = 'final';
   render();
+}
+
+// ---- on-chain mode -----------------------------------------------------
+
+const SEAT_KEYS = ['human', 'tanuki', 'tsuru', 'kitsune'];
+
+function chainStep(key, data = {}) {
+  const c = ui.chain;
+  if (!c) return;
+  const params = { ...data };
+  if (params.who) params.who = t(`names.${params.who}`);
+  if (params.by) params.by = t(`names.${params.by}`);
+  c.steps.push({ key, params, hash: data.hash || null });
+  pushLog(t(key, params), 'chain');
+  render();
+}
+
+async function refreshBankrolls() {
+  const c = ui.chain;
+  if (!c) return;
+  const ids = { human: c.human, ...Object.fromEntries(Object.entries(chain.AI_ACCOUNTS).map(([k, v]) => [k, v.accountId])) };
+  for (const [k, id] of Object.entries(ids)) {
+    try { c.bankrolls[k] = await chain.bankrollOf(id); } catch { /* keep last */ }
+  }
+  render();
+}
+
+async function startChainGame() {
+  ui.chain = { human: null, tableId: null, seed: null, steps: [], bankrolls: {}, error: null, busy: true, settled: null };
+  ui.overlay = 'chain';
+  render();
+  try {
+    if (!chain.aiReady()) throw new Error(t('notConfigured'));
+    chainStep('chainConnecting');
+    const human = (await chain.currentAccount()) || (await chain.connectWallet());
+    if (!human) throw new Error(t('noAccount'));
+    ui.chain.human = human;
+    chainStep('chainConnected', { account: human });
+    await refreshBankrolls();
+    const seed = await chain.newSeed();
+    ui.chain.seed = seed;
+    const { tableId } = await chain.openTable({ human, seats: SEAT_KEYS, seedHash: seed.hash, onStep: chainStep });
+    ui.chain.tableId = tableId;
+    await refreshBankrolls();
+    ui.chain.busy = false;
+    const g = newGame(seed.number);
+    ui.overlay = null;
+    render();
+    await g.play();
+    ui.chain.busy = true;
+    ui.overlay = 'final';
+    render();
+    const table = await chain.settleTable({ tableId, seats: SEAT_KEYS, points: g.points, seed: seed.seed, onStep: chainStep });
+    ui.chain.settled = table;
+    ui.chain.busy = false;
+    await refreshBankrolls();
+  } catch (e) {
+    console.error(e);
+    ui.chain.error = String(e?.message || e).slice(0, 200);
+    ui.chain.busy = false;
+    render();
+  }
+}
+
+async function cashOut() {
+  try {
+    ui.chain.busy = true;
+    render();
+    await chain.withdrawAll();
+    chainStep('chainWithdrawn', {});
+  } catch (e) {
+    ui.chain.error = String(e?.message || e).slice(0, 200);
+  }
+  ui.chain.busy = false;
+  await refreshBankrolls();
+}
+
+function chainSteps() {
+  const c = ui.chain;
+  if (!c) return '';
+  return `<ol class="steps">${c.steps.map(s => `<li>${t(s.key, s.params)}${s.hash ? ` <a href="${chain.explorerTx(s.hash)}" target="_blank" rel="noopener">${t('viewTx')}</a>` : ''}</li>`).join('')}
+    ${c.busy ? `<li class="busy"><span class="dots"><i></i><i></i><i></i></span></li>` : ''}</ol>
+    ${c.error ? `<p class="error">${t('chainError', { msg: escapeHtml(c.error) })}</p>` : ''}`;
+}
+
+function chainOverlay() {
+  const c = ui.chain;
+  return `
+    <div class="sheet chain">
+      <p class="eyebrow">NEAR testnet · <a href="${chain.explorerAccount(chain.CONTRACT_ID)}" target="_blank" rel="noopener">${chain.CONTRACT_ID}</a></p>
+      <h2>${t('chainTitle')}</h2>
+      ${chainSteps()}
+      ${c.error ? `<div class="row"><button type="button" class="act gold primary" data-act="startChain">${t('retry')}</button><button type="button" class="act" data-act="backToIntro">${t('close')}</button></div>` : ''}
+    </div>`;
 }
 
 // ---- rendering ---------------------------------------------------------
@@ -239,6 +337,7 @@ function opponentPanel(seat, side) {
         <span class="pts">${pts}<small>${t('pts')}</small></span>
         <span class="near">${(pts * NEAR_PER_POINT).toFixed(1)} NEAR</span>
         <span class="mood ${mood}">${t(`moods.${mood}`)}</span>
+        ${ui.chain && ui.chain.bankrolls[id] != null ? `<span class="wallet" title="${chain.AI_ACCOUNTS[id].accountId}">${t('bankroll')} ${chain.yoctoToNear(ui.chain.bankrolls[id], 1)} NEAR</span>` : ''}
         ${riichiStick(p.riichi)}
       </div>
       <p class="bubble ${ui.thinking === seat ? 'thinking' : ''}">${ui.thinking === seat ? '<span class="dots"><i></i><i></i><i></i></span>' : bubbleText}</p>
@@ -371,9 +470,11 @@ function introOverlay() {
         }).join('')}
       </ul>
       <p class="note">${t('startNote')}</p>
+      ${PREVIEW ? `<p class="note">${t('previewNote')} <a href="${LIVE_URL}" target="_blank" rel="noopener">${LIVE_URL}</a></p>` : ''}
       <div class="row">
-        <button type="button" class="act gold primary" data-act="start">${t('start')}</button>
-        <button type="button" class="act" data-act="rules">${t('rules')}</button>
+        ${PREVIEW ? '' : `<button type="button" class="act gold primary" data-act="startChain">${t('playChain')}</button>`}
+        <button type="button" class="act ${PREVIEW ? 'gold primary' : ''}" data-act="start">${t('playPractice')}</button>
+        <button type="button" class="act ghost" data-act="rules">${t('rules')}</button>
       </div>
     </div>`;
 }
@@ -434,8 +535,13 @@ function finalOverlay() {
       <p class="eyebrow">${t('payout')}</p>
       <h2>${t('finalTitle')}</h2>
       <ul class="standings">${standings(g.points, 'final')}</ul>
-      <p class="note">${t('seed')}: <code>${g.seed}</code></p>
-      <div class="row"><button type="button" class="act gold primary" data-act="start">${t('playAgain')}</button></div>
+      ${ui.chain ? chainSteps() : `<p class="note">${t('seed')}: <code>${g.seed}</code></p>`}
+      ${ui.chain && ui.chain.settled && ui.chain.bankrolls.human > 0n ? `<p>${t('yourBankroll', { near: chain.yoctoToNear(ui.chain.bankrolls.human) })}</p>` : ''}
+      <div class="row">
+        ${ui.chain && ui.chain.settled && ui.chain.bankrolls.human > 0n && !ui.chain.busy ? `<button type="button" class="act gold" data-act="cashOut">${t('cashOut')}</button>` : ''}
+        ${ui.chain?.busy ? '' : `<button type="button" class="act ${ui.chain ? '' : 'gold'} primary" data-act="${ui.chain ? 'startChain' : 'start'}">${t('playAgain')}</button>`}
+        ${ui.chain?.busy ? '' : `<button type="button" class="act" data-act="backToIntro">${t('backToMenu')}</button>`}
+      </div>
     </div>`;
 }
 
@@ -461,7 +567,7 @@ function render() {
   $('#mine').innerHTML = myArea();
   $('#log').innerHTML = logPanel();
   const ov = $('#overlay');
-  const view = { intro: introOverlay, result: resultOverlay, final: finalOverlay, rules: rulesOverlay }[ui.overlay];
+  const view = { intro: introOverlay, result: resultOverlay, final: finalOverlay, rules: rulesOverlay, chain: chainOverlay }[ui.overlay];
   ov.hidden = !view;
   ov.innerHTML = view ? view() : '';
 }
@@ -488,6 +594,9 @@ document.addEventListener('click', ev => {
   const act = ev.target.closest('[data-act]')?.dataset.act;
   if (!act) return;
   if (act === 'start') startGame();
+  if (act === 'startChain') startChainGame();
+  if (act === 'cashOut') cashOut();
+  if (act === 'backToIntro') { ui.overlay = 'intro'; render(); }
   if (act === 'rules') { ui.overlayBefore = ui.overlay; ui.overlay = 'rules'; render(); }
   if (act === 'closeRules') { ui.overlay = ui.overlayBefore; ui.overlayBefore = null; render(); }
   if (act === 'next') { ui.overlay = null; const r = ui.resolveOverlay; ui.resolveOverlay = null; render(); r?.(); }
