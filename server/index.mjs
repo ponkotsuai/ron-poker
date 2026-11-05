@@ -85,6 +85,17 @@ async function topUp(agent) {
   status.bankrolls[agent.id] = String(await view(CONTRACT_ID, 'bankroll_of', { account_id: agent.accountId }));
 }
 
+// Keep the AI bankrolls topped up in the background so opening a table never waits on it.
+let refreshing = null;
+function refreshBankrolls() {
+  if (refreshing || !status.ready) return refreshing;
+  refreshing = (async () => {
+    for (const a of Object.values(agents)) { try { await topUp(a); } catch (e) { console.error('top-up', a.id, e.message); } }
+  })().finally(() => { refreshing = null; });
+  return refreshing;
+}
+setInterval(refreshBankrolls, 3 * 60_000);
+
 // ---- players, lobby, tables ----------------------------------------------------
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -146,7 +157,7 @@ function leaveQueue(p) {
 
 function flushQueue() {
   const humans = queue.splice(0, 4);
-  humans.forEach(p => { p.inQueue = false; });
+  humans.forEach(p => { p.inQueue = false; p.send({ t: 'lobby', mode: 'starting', members: humans.map(h => h.name) }); });
   if (!queue.length) clearInterval(queueTimer);
   else { queueDeadline = Date.now() + QUEUE_MS; broadcastQueue(); }
   if (humans.length) startTable(humans).catch(e => humans.forEach(p => p.send({ t: 'error', message: String(e.message || e) })));
@@ -213,7 +224,7 @@ function startRoom(p) {
   if (!r || r.host !== p) throw new Error('only the host can start');
   const humans = r.members.filter(m => m.connected());
   rooms.delete(r.code);
-  humans.forEach(m => { m.room = null; });
+  humans.forEach(m => { m.room = null; m.send({ t: 'lobby', mode: 'starting', members: humans.map(h => h.name) }); });
   startTable(humans).catch(e => humans.forEach(m => m.send({ t: 'error', message: String(e.message || e) })));
 }
 
@@ -256,8 +267,10 @@ class Table {
 
   // 1. Open the table on chain (seed committed) and ask every human to pay.
   async open() {
+    const t0 = Date.now();
+    // Bankrolls are topped up in the background; only top up here if one is short.
     for (const id of this.aiIds) {
-      await topUp(agents[id]);
+      if (BigInt(status.bankrolls[id] || 0) < BUY_IN) await topUp(agents[id]);
       if (BigInt(status.bankrolls[id] || 0) < BUY_IN) throw new Error('the AI players are out of testnet NEAR; try again later');
     }
     const seed = randomBytes(16).toString('hex');
@@ -271,6 +284,8 @@ class Table {
     this.step('chainTableOpened', { id: this.id, hash: r.hash });
     for (const p of this.humans) p.send({ t: 'opened', tableId: this.id, seat: p.seat, seats, seedHash: hash });
     this.payTimer = setTimeout(() => this.abort('notEveryonePaid'), PAY_MS);
+    console.log(`table ${this.id} opened in ${Date.now() - t0} ms for ${this.humans.length} human(s)`);
+    status.lastOpenMs = Date.now() - t0;
   }
 
   // 2. A human paid with their wallet; check it on chain. When everyone has, the AIs pay and we deal.
@@ -426,6 +441,7 @@ class Table {
 
   release() {
     this.humans.forEach(p => { if (p.table === this) p.table = null; });
+    refreshBankrolls();
     setTimeout(() => tables.delete(this.id), 60_000);
   }
 }
@@ -461,6 +477,7 @@ const server = http.createServer((req, res) => {
       referee: referee.accountId, contractReferee: status.contractReferee,
       agents: Object.fromEntries(Object.values(agents).map(a => [a.id, { account: a.accountId, bankroll: status.bankrolls[a.id] || null }])),
       tables: [...tables.values()].filter(t => !t.closed).length, waiting: queue.length, rooms: rooms.size,
+      lastOpenMs: status.lastOpenMs || null,
     }));
     return;
   }

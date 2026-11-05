@@ -11,10 +11,15 @@ import bs58 from 'bs58';
 import { createHash } from 'node:crypto';
 import { ed25519 } from '@noble/curves/ed25519';
 
+// Never let a stalled RPC connection hang a table: every request gives up after 12 s
+// and the failover provider moves on to the next endpoint.
+const baseFetch = globalThis.fetch;
+globalThis.fetch = (url, opts = {}) => baseFetch(url, { ...opts, signal: opts.signal ?? AbortSignal.timeout(12_000) });
+
 export const NEAR = 10n ** 24n;
 const GAS = 50_000_000_000_000n;
 
-export const RPC_URLS = (process.env.RPC_URLS || 'https://rpc.testnet.fastnear.com,https://test.rpc.fastnear.com,https://near-testnet.drpc.org,https://rpc.testnet.near.org').split(',');
+export const RPC_URLS = (process.env.RPC_URLS || 'https://test.rpc.fastnear.com,https://rpc.testnet.fastnear.com,https://near-testnet.drpc.org,https://rpc.testnet.near.org').split(',');
 export const FAUCET_URL = process.env.FAUCET_URL || 'https://helper.nearprotocol.com/account';
 export const provider = new FailoverRpcProvider(RPC_URLS.map(url => new JsonRpcProvider({ url }, { retries: 2, backoff: 1.5, wait: 400 })));
 
@@ -71,7 +76,8 @@ export function signerAccount(accountId, secretKey) {
 
 export async function call(account, contractId, methodName, args, deposit = 0n) {
   return serial(account.accountId, async () => {
-    const outcome = await account.callFunctionRaw({ contractId, methodName, args, deposit, gas: GAS });
+    // Wait only until the call has executed (about a second), not for full finality.
+    const outcome = await account.callFunctionRaw({ contractId, methodName, args, deposit, gas: GAS, waitUntil: 'EXECUTED_OPTIMISTIC' });
     const b64 = outcome?.status?.SuccessValue;
     let value = null;
     if (b64) { try { value = JSON.parse(Buffer.from(b64, 'base64').toString()); } catch { /* not json */ } }

@@ -83,14 +83,19 @@ async function humanCall(method, args, deposit = 0n) {
   });
 }
 
-/** Pay the 3 NEAR buy-in and register a fresh session key for this table. */
-export async function payBuyIn(tableId) {
+/**
+ * Pay the 3 NEAR buy-in and register a fresh session key for this table.
+ * Winnings from earlier tables stay in your table bankroll; they are used first, and only
+ * the shortfall is attached. With enough in the bankroll nothing is attached at all.
+ */
+export async function payBuyIn(tableId, bankroll = 0n) {
   const session = KeyPair.fromRandom('ed25519');
   if (TEST_MODE) {
     await fetch(`${REFEREE_URL}/test/join`, { method: 'POST', body: JSON.stringify({ tableId, account: TEST_ACCOUNT, sessionKey: session.getPublicKey().toString() }) });
     return { session, hash: null };
   }
-  const outcome = await humanCall('join', { table_id: tableId, session_key: session.getPublicKey().toString() }, BUY_IN_YOCTO);
+  const deposit = bankroll >= BUY_IN_YOCTO ? 0n : BUY_IN_YOCTO - bankroll;
+  const outcome = await humanCall('join', { table_id: tableId, session_key: session.getPublicKey().toString() }, deposit);
   return { session, hash: outcome?.transaction?.hash || null };
 }
 
@@ -98,6 +103,8 @@ export function signSeat(session, tableId, account) {
   const sig = session.sign(new TextEncoder().encode(`ronpoker:${tableId}:${account}`)).signature;
   return { publicKey: session.getPublicKey().toString(), signature: btoa(String.fromCharCode(...sig)) };
 }
+
+export { BUY_IN_YOCTO };
 
 export async function withdrawAll() {
   return humanCall('withdraw', {}, 1n);

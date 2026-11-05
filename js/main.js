@@ -304,6 +304,7 @@ function onRefereeMessage(m, state) {
       if (m.key === 'chainGameOn') refreshBankrolls();
       break;
     case 'opened':
+      refreshBankrolls();
       c.tableId = m.tableId;
       c.you = m.seat;
       ui.seats = rotate(m.seats);
@@ -441,7 +442,9 @@ async function payBuyIn() {
   c.phase = 'joining';
   render();
   try {
-    const { session, hash } = await chain.payBuyIn(c.tableId);
+    let bankroll = 0n;
+    try { bankroll = await chain.bankrollOf(c.human); } catch { /* pay in full */ }
+    const { session, hash } = await chain.payBuyIn(c.tableId, bankroll);
     c.session = session;
     chainStep('chainHumanPaid', { hash });
     c.conn.send({ t: 'paid', ...chain.signSeat(session, c.tableId, c.human) });
@@ -483,6 +486,13 @@ function lobbyPanel() {
       <div class="row"><button type="button" class="act" data-act="leaveLobby">${t('cancel')}</button></div>
     </div>`;
   }
+  if (l.mode === 'starting') {
+    return `<div class="lobby">
+      <p>${t('tableStarting')}</p>
+      ${members(l.members)}
+      <p class="busy"><span class="dots"><i></i><i></i><i></i></span></p>
+    </div>`;
+  }
   if (l.mode === 'room') {
     return `<div class="lobby">
       <p class="label">${t('roomCode')}</p>
@@ -495,8 +505,10 @@ function lobbyPanel() {
       </div>
     </div>`;
   }
+  const bank = c.bankrolls.human;
   return `<div class="lobby">
     <p>${t('lobbyIntro')}</p>
+    ${bank != null ? `<p class="note">${t('lobbyBankroll', { near: chain.yoctoToNear(bank) })}</p>` : ''}
     <div class="row"><button type="button" class="act gold primary" data-act="quick">${t('quickMatch')}</button>
       <button type="button" class="act" data-act="createRoom">${t('createRoom')}</button></div>
     <div class="row join">
@@ -518,7 +530,8 @@ function chainOverlay() {
       ${c.phase === 'lobby' ? lobbyPanel() : ''}
       ${c.phase === 'needPay' || c.phase === 'joining' ? `<p class="note">${t('tableSeats')}: ${[0, 1, 2, 3].map(seatName).join(' · ')}</p>` : ''}
       ${showSteps ? chainSteps() : c.error ? `<p class="error">${t('chainError', { msg: escapeHtml(c.error) })}</p>` : ''}
-      ${c.phase === 'needPay' && !c.busy ? `<div class="row"><button type="button" class="act gold primary" data-act="payBuyIn">${t('payBuyIn')}</button></div>` : ''}
+      ${c.phase === 'needPay' && !c.busy ? `<div class="row"><button type="button" class="act gold primary" data-act="payBuyIn">${(c.bankrolls.human ?? 0n) >= chain.BUY_IN_YOCTO ? t('payFromBankroll') : t('payBuyIn')}</button></div>
+        ${(c.bankrolls.human ?? 0n) >= chain.BUY_IN_YOCTO ? `<p class="note">${t('payFromBankrollNote', { near: chain.yoctoToNear(c.bankrolls.human) })}</p>` : ''}` : ''}
       ${c.phase === 'aborted' ? `<div class="row"><button type="button" class="act gold primary" data-act="backToLobby">${t('backToLobby')}</button></div>` : ''}
       ${c.error && !['needPay', 'lobby'].includes(c.phase) ? `<div class="row"><button type="button" class="act gold primary" data-act="startChain">${t('retry')}</button><button type="button" class="act" data-act="backToIntro">${t('close')}</button></div>` : ''}
       ${c.phase === 'lobby' ? `<div class="row"><button type="button" class="act ghost" data-act="backToIntro">${t('backToMenu')}</button></div>` : ''}
