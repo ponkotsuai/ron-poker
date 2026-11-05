@@ -13,6 +13,8 @@ import { setupMeteorWallet } from '@near-wallet-selector/meteor-wallet';
 import { NETWORK, RPC_URLS, EXPLORER, CONTRACT_ID, BUY_IN_YOCTO, REFEREE_URL, TEST_MODE } from './config.js';
 
 const GAS = 50_000_000_000_000n;
+// Local tests only (see config.js): a stand-in wallet account.
+const TEST_ACCOUNT = TEST_MODE ? (new URLSearchParams(location.search).get('testAccount') || 'tester.testnet') : null;
 const provider = new FailoverRpcProvider(RPC_URLS.map(url => new JsonRpcProvider({ url }, { retries: 2, backoff: 1.5, wait: 300 })));
 
 export const explorerTx = hash => `${EXPLORER}/txns/${hash}`;
@@ -58,7 +60,7 @@ export function warmUp() {
 }
 
 export async function currentAccount() {
-  if (TEST_MODE) return 'tester.testnet';
+  if (TEST_MODE) return TEST_ACCOUNT;
   const s = await getSelector();
   const acc = s.store.getState().accounts.find(a => a.active) || s.store.getState().accounts[0];
   return acc ? acc.accountId : null;
@@ -85,7 +87,7 @@ async function humanCall(method, args, deposit = 0n) {
 export async function payBuyIn(tableId) {
   const session = KeyPair.fromRandom('ed25519');
   if (TEST_MODE) {
-    await fetch(`${REFEREE_URL}/test/join`, { method: 'POST', body: JSON.stringify({ tableId, account: 'tester.testnet', sessionKey: session.getPublicKey().toString() }) });
+    await fetch(`${REFEREE_URL}/test/join`, { method: 'POST', body: JSON.stringify({ tableId, account: TEST_ACCOUNT, sessionKey: session.getPublicKey().toString() }) });
     return { session, hash: null };
   }
   const outcome = await humanCall('join', { table_id: tableId, session_key: session.getPublicKey().toString() }, BUY_IN_YOCTO);

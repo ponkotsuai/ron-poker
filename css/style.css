@@ -358,3 +358,20 @@ button.tile.selected { transform: translateY(-12px); box-shadow: 0 calc(var(--w)
 .error { color: var(--danger); font-size: 0.9rem; }
 .act.ghost { border-color: transparent; }
 #log li.chain { color: var(--gold); }
+
+/* ---- lobby ------------------------------------------------------------- */
+.lobby { display: grid; gap: 12px; }
+.lobby .row.join { align-items: center; }
+.code { font-family: var(--font-num); font-size: 2.4rem; font-weight: 600; letter-spacing: 0.3em; color: var(--gold); margin: 0; line-height: 1; }
+.code-input, .nick-input {
+  min-height: 44px; padding: 0 12px; border-radius: 8px; border: 1px solid var(--muted);
+  background: rgba(0, 0, 0, 0.25); color: var(--text); font: inherit;
+}
+.code-input { width: 7.5em; font-family: var(--font-num); letter-spacing: 0.25em; text-transform: uppercase; }
+.nick-row { display: grid; gap: 4px; }
+.nick-input { width: min(100%, 20em); }
+.code-input:focus-visible, .nick-input:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+.members { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.members li { padding: 8px 10px; border-radius: 6px; background: rgba(255, 255, 255, 0.05); overflow-wrap: anywhere; }
+.members li.empty { color: var(--muted); border: 1px dashed var(--felt-line); background: transparent; }
+.glyph.human { background: var(--gold); box-shadow: 0 3px 0 var(--gold-deep); font-family: var(--font-body); font-weight: 700; }

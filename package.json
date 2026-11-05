@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test tests/engine.test.mjs && node --test tests/server.test.mjs && node --test tests/server-leave.test.mjs",
+    "test": "node --test tests/engine.test.mjs && node --test tests/server.test.mjs && node --test tests/server-leave.test.mjs && node --test tests/server-room.test.mjs",
     "simulate": "node scripts/simulate.mjs",
     "build": "node scripts/build.mjs",
     "start": "node server/index.mjs"
