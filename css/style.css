@@ -191,6 +191,7 @@ button.tile.selected { transform: translateY(-12px); box-shadow: 0 calc(var(--w)
 /* ---- seats around the board ----------------------------------------- */
 .opp.top { width: min(100%, 620px); grid-template-columns: auto auto minmax(0, 1fr) auto; align-items: center; column-gap: 14px; }
 .opp.top .bubble { min-height: 0; }
+.opp.top .purse { max-width: 230px; }
 .opp.side .seat-head { flex-wrap: wrap; }
 .opp.side .bubble { font-size: 0.76rem; }
 @media (max-width: 760px) {

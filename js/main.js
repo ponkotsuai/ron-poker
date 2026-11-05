@@ -184,8 +184,7 @@ async function startGame() {
 }
 
 // ---- on-chain mode -----------------------------------------------------
-
-const SEAT_KEYS = ['human', 'tanuki', 'tsuru', 'kitsune'];
+// The referee service runs the game; this page mirrors its state and sends your moves.
 
 function chainStep(key, data = {}) {
   const c = ui.chain;
@@ -201,8 +200,8 @@ function chainStep(key, data = {}) {
 async function refreshBankrolls() {
   const c = ui.chain;
   if (!c) return;
-  const ids = { human: c.human, ...Object.fromEntries(Object.entries(chain.AI_ACCOUNTS).map(([k, v]) => [k, v.accountId])) };
-  if (!c.human) delete ids.human;
+  const ids = { ...(c.agents || {}) };
+  if (c.human) ids.human = c.human;
   for (const [k, id] of Object.entries(ids)) {
     try { c.bankrolls[k] = await chain.bankrollOf(id); } catch { /* keep last */ }
   }
@@ -211,14 +210,116 @@ async function refreshBankrolls() {
 
 function chainFail(e) {
   console.error(e);
+  if (!ui.chain) return;
   ui.chain.error = String(e?.message || e).slice(0, 200);
   ui.chain.busy = false;
   render();
 }
 
-// Step 1 (click): connect the wallet, refund leftovers, prepare AI wallets, open the table.
+// A stand-in for the local Game object, built from the referee's snapshots.
+function mirrorGame(s) {
+  return {
+    remote: true,
+    handNo: s.handNo, totalHands: s.totalHands, dealer: s.dealer, turn: s.turn, over: s.over,
+    points: s.points, wall: { length: s.wallCount }, seed: s.seedHash,
+    players: s.players.map(p => ({ ...p, hand: p.hand || Array.from({ length: p.handCount }, () => null) })),
+  };
+}
+
+function onRefereeMessage(m) {
+  const c = ui.chain;
+  if (!c) return;
+  switch (m.t) {
+    case 'hello':
+      c.agents = m.agents;
+      refreshBankrolls();
+      c.conn.send({ t: 'open' });
+      break;
+    case 'step':
+      chainStep(m.key, m.params);
+      if (m.key === 'chainGameOn') refreshBankrolls();
+      break;
+    case 'opened':
+      c.tableId = m.tableId;
+      c.phase = 'needPay';
+      c.busy = false;
+      chainStep('chainHumanPay');
+      break;
+    case 'state':
+      ui.game = mirrorGame(m.game);
+      if (c.phase !== 'playing' && !m.game.over) { c.phase = 'playing'; ui.overlay = null; }
+      render();
+      break;
+    case 'event':
+      if (m.type === 'handStart' && ui.overlay === 'result') { ui.overlay = null; ui.resolveOverlay = null; }
+      if (m.type === 'gameEnd') {
+        c.phase = 'settling';
+        c.busy = true;
+        ui.overlay = 'final';
+        chainStep('chainSettling');
+      }
+      onEvent(m.type, m.e);
+      break;
+    case 'think':
+      ui.thinking = null;
+      think(m.seat, m.key, m.params);
+      render();
+      break;
+    case 'thinking':
+      ui.thinking = m.seat;
+      render();
+      break;
+    case 'prompt':
+      ui.thinking = null;
+      if (m.kind === 'next') {
+        if (m.record) showResult(m.record).then(() => c.conn.send({ t: 'decide', kind: 'next', value: true }));
+      } else if (m.kind) {
+        ui.selected = null;
+        ui.pending = {
+          type: m.kind, ev: m.ev, tile: m.tile, from: m.from,
+          resolve: value => c.conn.send({ t: 'decide', kind: m.kind, value }),
+        };
+        render();
+      }
+      break;
+    case 'settled':
+      c.settled = m;
+      c.phase = 'settled';
+      c.busy = false;
+      ui.overlay = 'final';
+      chainStep('chainSettled', { id: m.tableId, hash: m.hash });
+      refreshBankrolls();
+      break;
+    case 'aborted':
+      chainStep('chainAborted', { id: m.tableId, hash: m.hash });
+      break;
+    case 'error':
+      if (c.phase === 'playing') ui.overlay = 'chain';
+      chainFail(new Error(m.message));
+      break;
+    default:
+  }
+}
+
+function onRefereeClose() {
+  const c = ui.chain;
+  if (!c || c.phase === 'settled' || c.closing) return;
+  if (c.phase === 'playing' && c.session && c.tableId != null) {
+    // Reconnect and pick the game up where it is. Until then the referee plays safe moves for you.
+    setTimeout(() => {
+      c.conn = chain.connectReferee(onRefereeMessage, onRefereeClose);
+      c.conn.ready.then(() => c.conn.send({ t: 'resume', tableId: c.tableId, account: c.human, ...chain.signSeat(c.session, c.tableId, c.human) }))
+        .catch(chainFail);
+    }, 1500);
+  } else if (c.phase !== 'needPay') {
+    chainFail(new Error(t('refereeLost')));
+  }
+}
+
+// Step 1 (click): connect the wallet, reach the referee, and have it open a table.
 async function startChainGame() {
-  ui.chain = { phase: 'connecting', human: null, tableId: null, seed: null, steps: [], bankrolls: {}, error: null, busy: true, settled: null, points: null };
+  if (ui.chain?.conn) { ui.chain.closing = true; ui.chain.conn.close(); }
+  ui.chain = { phase: 'connecting', human: null, tableId: null, session: null, agents: null, steps: [], bankrolls: {}, error: null, busy: true, settled: null, conn: null };
   ui.overlay = 'chain';
   render();
   try {
@@ -227,22 +328,15 @@ async function startChainGame() {
     if (!human) throw new Error(t('noAccount'));
     ui.chain.human = human;
     chainStep('chainConnected', { account: human });
-    ui.chain.phase = 'preparing';
-    // Refund tables left waiting by an earlier, interrupted attempt before checking bankrolls.
-    await chain.cleanupStaleTables(chainStep);
-    await chain.setupAgents(chainStep);
-    await refreshBankrolls();
-    const seed = await chain.newSeed();
-    ui.chain.seed = seed;
-    const { tableId } = await chain.openTable({ human, seats: SEAT_KEYS, seedHash: seed.hash, onStep: chainStep });
-    ui.chain.tableId = tableId;
-    ui.chain.phase = 'needPay';
-    ui.chain.busy = false;
-    chainStep('chainHumanPay');
+    chainStep('chainReferee');
+    const conn = chain.connectReferee(onRefereeMessage, onRefereeClose);
+    ui.chain.conn = conn;
+    await conn.ready;
+    conn.send({ t: 'hello', account: human });
   } catch (e) { chainFail(e); }
 }
 
-// Step 2 (click): pay the buy-in in Meteor, then the AIs pay, then the game starts.
+// Step 2 (click): pay the buy-in in Meteor. The referee then has the AIs pay and starts dealing.
 async function payBuyIn() {
   const c = ui.chain;
   c.error = null;
@@ -250,45 +344,12 @@ async function payBuyIn() {
   c.phase = 'joining';
   render();
   try {
-    const table = await chain.getTable(c.tableId);
-    if (!table.joined[0]) {
-      const hash = await chain.humanJoin(c.tableId);
-      chainStep('chainHumanPaid', { hash });
-    }
-    await chain.aiJoinAll({ tableId: c.tableId, seats: SEAT_KEYS, onStep: chainStep });
-    await refreshBankrolls();
+    const { session, hash } = await chain.payBuyIn(c.tableId);
+    c.session = session;
+    chainStep('chainHumanPaid', { hash });
+    c.conn.send({ t: 'paid', ...chain.signSeat(session, c.tableId, c.human) });
   } catch (e) {
     c.phase = 'needPay';
-    chainFail(e);
-    return;
-  }
-  c.busy = false;
-  c.phase = 'playing';
-  const g = newGame(c.seed.number);
-  ui.overlay = null;
-  render();
-  await g.play();
-  c.points = g.points.slice();
-  c.phase = 'needSign';
-  ui.overlay = 'final';
-  render();
-}
-
-// Step 3 (click): sign the scoresheet; the AIs sign the same one; the contract pays out.
-async function signResult() {
-  const c = ui.chain;
-  c.error = null;
-  c.busy = true;
-  c.phase = 'settling';
-  render();
-  try {
-    const table = await chain.settleTable({ tableId: c.tableId, seats: SEAT_KEYS, points: c.points, seed: c.seed.seed, onStep: chainStep });
-    c.settled = table.status === 'Settled' ? table : null;
-    c.phase = c.settled ? 'settled' : 'needSign';
-    c.busy = false;
-    await refreshBankrolls();
-  } catch (e) {
-    c.phase = 'needSign';
     chainFail(e);
   }
 }
@@ -386,7 +447,7 @@ function opponentPanel(seat, side) {
         <span class="pts">${pts}<small>${t('pts')}</small></span>
         <span class="near">${(pts * NEAR_PER_POINT).toFixed(1)} NEAR</span>
         <span class="mood ${mood}">${t(`moods.${mood}`)}</span>
-        ${ui.chain && ui.chain.bankrolls[id] != null ? `<span class="wallet" title="${chain.AI_ACCOUNTS[id]?.accountId || ''}">${t('bankroll')} ${chain.yoctoToNear(ui.chain.bankrolls[id], 1)} NEAR</span>` : ''}
+        ${ui.chain && ui.chain.bankrolls[id] != null ? `<span class="wallet" title="${ui.chain.agents?.[id] || ''}">${t('bankroll')} ${chain.yoctoToNear(ui.chain.bankrolls[id], 1)} NEAR</span>` : ''}
         ${riichiStick(p.riichi)}
       </div>
       <p class="bubble ${ui.thinking === seat ? 'thinking' : ''}">${ui.thinking === seat ? '<span class="dots"><i></i><i></i><i></i></span>' : bubbleText}</p>
@@ -587,10 +648,9 @@ function finalOverlay() {
       ${ui.chain ? chainSteps() : `<p class="note">${t('seed')}: <code>${g.seed}</code></p>`}
       ${ui.chain && ui.chain.settled && ui.chain.bankrolls.human > 0n ? `<p>${t('yourBankroll', { near: chain.yoctoToNear(ui.chain.bankrolls.human) })}</p>` : ''}
       <div class="row">
-        ${ui.chain?.phase === 'needSign' && !ui.chain.busy ? `<button type="button" class="act gold primary" data-act="signResult">${t('signResult')}</button>` : ''}
         ${ui.chain && ui.chain.settled && ui.chain.bankrolls.human > 0n && !ui.chain.busy ? `<button type="button" class="act gold" data-act="cashOut">${t('cashOut')}</button>` : ''}
-        ${ui.chain?.busy || ui.chain?.phase === 'needSign' ? '' : `<button type="button" class="act ${ui.chain ? '' : 'gold'} primary" data-act="${ui.chain ? 'startChain' : 'start'}">${t('playAgain')}</button>`}
-        ${ui.chain?.busy || ui.chain?.phase === 'needSign' ? '' : `<button type="button" class="act" data-act="backToIntro">${t('backToMenu')}</button>`}
+        ${ui.chain?.busy ? '' : `<button type="button" class="act ${ui.chain ? '' : 'gold'} primary" data-act="${ui.chain ? 'startChain' : 'start'}">${t('playAgain')}</button>`}
+        ${ui.chain?.busy ? '' : `<button type="button" class="act" data-act="backToIntro">${t('backToMenu')}</button>`}
       </div>
     </div>`;
 }
@@ -647,7 +707,6 @@ document.addEventListener('click', ev => {
   if (act === 'startChain') startChainGame();
   if (act === 'cashOut') cashOut();
   if (act === 'payBuyIn') payBuyIn();
-  if (act === 'signResult') signResult();
   if (act === 'backToIntro') { ui.overlay = 'intro'; render(); }
   if (act === 'rules') { ui.overlayBefore = ui.overlay; ui.overlay = 'rules'; render(); }
   if (act === 'closeRules') { ui.overlay = ui.overlayBefore; ui.overlayBefore = null; render(); }
