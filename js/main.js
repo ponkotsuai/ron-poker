@@ -225,7 +225,7 @@ function onEvent(type, e) {
 }
 
 function seatEl(seat) {
-  return $(['#mine', '#seat-right', '#seat-top', '#seat-left'][seat]);
+  return $(`#np-${seat}`);
 }
 
 async function showResult(record) {
@@ -611,50 +611,104 @@ function tile(c, opts = {}) {
   return `<span class="${cls.join(' ')}" aria-label="${cardLabel(c)}">${inner}${mark}</span>`;
 }
 
-function river(p, seat) {
-  return p.discards.map((c, i) => tile(c, {
+// ---- the table ---------------------------------------------------------
+// A fixed 1280×720 stage, scaled to the window. Everything around the centre is placed by
+// turning one layout (the one in front of you) to face each seat: 0 you, 1 right, 2 across, 3 left.
+
+const STAGE_W = 1280;
+const STAGE_H = 720;
+const C = { x: 640, y: 300 };
+const ROT = [0, -90, 180, 90];
+const PLATE = [
+  { left: 24, top: 600 },
+  { left: 968, top: 206 },
+  { left: 776, top: 66 },
+  { left: 42, top: 206 },
+];
+const BUBBLE_MS = 7000;
+
+// A box `w` wide whose top edge sits `d` below the centre, turned to face `seat`.
+function around(seat, w, d) {
+  return `left:${C.x - w / 2}px;top:${C.y + d}px;width:${w}px;transform-origin:${w / 2}px ${-d}px;transform:rotate(${ROT[seat]}deg)`;
+}
+
+function river(p, seat, turn) {
+  const tiles = p.discards.map((c, i) => tile(c, {
     size: 'xs',
     sideways: p.riichiAt === i,
     fresh: ui.lastDiscard && ui.lastDiscard.seat === seat && ui.lastDiscard.id === c.id,
     land: once('land') === `${seat}:${c.id}`,
   })).join('');
+  return `<div class="river ${turn ? 'turn' : ''}" style="${around(seat, 240, 118)}" aria-label="${seatName(seat)}">${tiles}</div>`;
+}
+
+function backs(p, seat) {
+  return `<div class="backs" style="${around(seat, 220, seat === 2 ? 234 : 244)}" aria-hidden="true">${p.hand.map(() => tile(null, { back: true, size: 'bk' })).join('')}</div>`;
 }
 
 function riichiStick(on, seat) {
   return on ? `<span class="stick ${once('stick') === seat ? 'new' : ''}" title="Riichi"><span></span></span>` : '';
 }
 
-function opponentPanel(seat, side) {
+function speech(seat) {
+  const info = ui.seats[seat] || PRACTICE_SEATS[seat];
+  if (info.kind !== 'ai') return '';
+  if (ui.thinking === seat) return `<p class="speech thinking"><span class="dots"><i></i><i></i><i></i></span></p>`;
+  const b = ui.bubbles[seat];
+  if (!b) return '';
+  const age = Date.now() - b.at;
+  if (age > BUBBLE_MS) return '';
+  return `<p class="speech" style="animation-delay:-${age}ms">${t(b.key, b.params)}</p>`;
+}
+
+function nameplate(seat) {
   const g = ui.game;
   const info = ui.seats[seat] || PRACTICE_SEATS[seat];
   const isAI = info.kind === 'ai';
-  const id = info.id;
-  const p = g ? g.players[seat] : { hand: [1, 2, 3, 4], discards: [], riichi: false };
+  const p = g ? g.players[seat] : { riichi: false };
   const pts = g ? g.points[seat] : START_POINTS;
   const mood = moodOf(pts, START_POINTS);
-  const bubble = ui.bubbles[seat];
-  const bubbleText = bubble ? t(bubble.key, bubble.params) : isAI ? t(`bios.${id}`) : t('humanPlayer');
-  const isDealer = g && g.dealer === seat;
   const active = g && !g.over && g.turn === seat;
+  const dealer = g && g.dealer === seat;
+  const wallet = isAI && ui.chain && ui.chain.bankrolls[info.id] != null
+    ? `<span class="wallet" title="${ui.chain.agents?.[info.id] || ''}">${t('bankroll')} ${chain.yoctoToNear(ui.chain.bankrolls[info.id], 1)} NEAR</span>` : '';
+  const sub = seat === HUMAN ? '' : isAI ? t(`styles.${info.id}`) : t('humanTag');
+  const { left, top } = PLATE[seat];
   return `
-    <section class="seat opp ${side} ${active ? 'active' : ''} ${p.riichi ? 'in-riichi' : ''}" aria-label="${seatName(seat)}">
-      <header class="seat-head">
-        <span class="glyph ${isAI ? '' : 'human'}">${seatGlyph(seat)}</span>
-        <span class="who">
-          <span class="name">${seatName(seat)}${isDealer ? `<span class="dealer">${t('dealer')}</span>` : ''}</span>
-          <span class="style">${isAI ? t(`styles.${id}`) : t('humanTag')}</span>
-        </span>
-      </header>
-      <div class="purse">
-        <span class="pts">${pts}<small>${t('pts')}</small></span>
-        <span class="near">${(pts * NEAR_PER_POINT).toFixed(1)} NEAR</span>
-        ${isAI ? `<span class="mood ${mood}">${t(`moods.${mood}`)}</span>` : ''}
-        ${isAI && ui.chain && ui.chain.bankrolls[id] != null ? `<span class="wallet" title="${ui.chain.agents?.[id] || ''}">${t('bankroll')} ${chain.yoctoToNear(ui.chain.bankrolls[id], 1)} NEAR</span>` : ''}
-        ${riichiStick(p.riichi, seat)}
+    <section class="np s${seat} ${active ? 'active' : ''} ${p.riichi ? 'in-riichi' : ''}" id="np-${seat}" style="left:${left}px;top:${top}px" aria-label="${seatName(seat)}">
+      <span class="avatar ${isAI ? '' : 'human'}">${seat === HUMAN ? escapeHtml((ui.nick || t('you')).slice(0, 1).toUpperCase()) : seatGlyph(seat)}</span>
+      <div class="np-body">
+        <p class="np-name"><span class="nm">${seatName(seat)}</span>${dealer ? `<span class="dealer">${t('dealer')}</span>` : ''}</p>
+        ${sub ? `<p class="np-sub">${sub}${isAI && mood !== 'steady' ? ` <span class="mood ${mood}">${t(`moods.${mood}`)}</span>` : ''}</p>` : ''}
+        <p class="np-pts"><b>${pts}</b><small>${t('pts')}</small><span class="near">${(pts * NEAR_PER_POINT).toFixed(1)} NEAR</span></p>
+        ${wallet}
       </div>
-      <p class="bubble ${ui.thinking === seat ? 'thinking' : ''}">${ui.thinking === seat ? '<span class="dots"><i></i><i></i><i></i></span>' : bubbleText}</p>
-      <div class="backs">${p.hand.map(() => tile(null, { back: true, size: 'xxs' })).join('')}</div>
+      ${riichiStick(p.riichi, seat)}
+      ${speech(seat)}
     </section>`;
+}
+
+function compass() {
+  const g = ui.game;
+  const total = g ? g.totalHands : 8;
+  const handNo = g ? Math.min(g.handNo + 1, total) : 1;
+  const wall = g ? g.wall.length : 38;
+  const turnSeat = g && !g.over ? g.turn : null;
+  const pips = Array.from({ length: total }, (_, i) => `<i class="${i < handNo - 1 ? 'done' : i === handNo - 1 ? 'now' : ''}"></i>`).join('');
+  const edges = [0, 1, 2, 3].map(seat => `
+    <div class="edge ${turnSeat === seat ? 'turn' : ''}" style="transform:rotate(${ROT[seat]}deg)">
+      <span class="e-pts">${g && g.dealer === seat ? `<i class="e-dealer">${t('dealerShort')}</i>` : ''}${g ? g.points[seat] : START_POINTS}</span>
+      <span class="lamp"></span>
+    </div>`).join('');
+  return `
+    <div class="compass" style="left:${C.x - 110}px;top:${C.y - 110}px">
+      ${edges}
+      <div class="c-mid">
+        <span class="c-hand">${t('handBanner', { n: handNo })}</span>
+        <span class="pips" aria-hidden="true">${pips}</span>
+        <span class="c-wall"><span class="stack" aria-hidden="true"><i></i><i></i><i></i></span>${t('left', { n: wall })}</span>
+      </div>
+    </div>`;
 }
 
 function statusText() {
@@ -668,37 +722,23 @@ function statusText() {
   return '';
 }
 
-// The board in the middle: each player's discards sit on their own side, like a mahjong table.
+// Everything on the felt except your hand: centre panel, the four rivers, the opponents'
+// face-down cards and every player's nameplate.
 function board() {
   const g = ui.game;
-  const handNo = g ? Math.min(g.handNo + 1, g.totalHands) : 1;
-  const total = g ? g.totalHands : 8;
-  const wall = g ? g.wall.length : 38;
-  const empty = { discards: [], riichiAt: -1 };
-  const r = seat => river(g ? g.players[seat] : empty, seat);
+  const empty = { discards: [], riichiAt: -1, hand: [1, 2, 3, 4], riichi: false };
+  const P = seat => (g ? g.players[seat] : empty);
   const turnSeat = g && !g.over ? g.turn : null;
-  const pips = Array.from({ length: total }, (_, i) => `<i class="${i < handNo - 1 ? 'done' : i === handNo - 1 ? 'now' : ''}"></i>`).join('');
-  const dealer = g ? g.dealer : 0;
   return `
-    <div class="board">
-      <div class="river r-top ${turnSeat === 2 ? 'turn' : ''}" aria-label="${seatName(2)}">${r(2)}</div>
-      <div class="river r-left ${turnSeat === 3 ? 'turn' : ''}" aria-label="${seatName(3)}">${r(3)}</div>
-      <div class="core">
-        <span class="label">${t('hand')}</span>
-        <span class="big">${handNo}<small>/${total}</small></span>
-        <span class="pips" aria-hidden="true">${pips}</span>
-        <span class="wallcount"><span class="stack" aria-hidden="true"><i></i><i></i><i></i></span><span class="label">${t('wall')}</span> <span class="num">${wall}</span></span>
-        <span class="dealer-tag">${t('dealer')}: ${seatName(dealer)}</span>
-      </div>
-      <div class="river r-right ${turnSeat === 1 ? 'turn' : ''}" aria-label="${seatName(1)}">${r(1)}</div>
-      <div class="river r-me ${turnSeat === HUMAN ? 'turn' : ''}" aria-label="${t('you')}">${r(HUMAN)}</div>
-    </div>`;
+    ${compass()}
+    ${[0, 1, 2, 3].map(seat => river(P(seat), seat, turnSeat === seat)).join('')}
+    ${[1, 2, 3].map(seat => backs(P(seat), seat)).join('')}
+    ${[0, 1, 2, 3].map(nameplate).join('')}`;
 }
 
 function myArea() {
   const g = ui.game;
   const me = g ? g.players[HUMAN] : { hand: [], discards: [], riichi: false };
-  const pts = g ? g.points[HUMAN] : START_POINTS;
   const pending = ui.pending;
   const discarding = pending?.type === 'discard';
   const hand = me.hand.map((c, index) => ({ c, index }));
@@ -722,42 +762,35 @@ function myArea() {
     const sel = ui.selected;
     const canRiichi = sel != null && marks[sel];
     actions = `
-      <button type="button" class="act" data-act="discard" ${sel == null ? 'disabled' : ''}>${t('discard')}</button>
-      <button type="button" class="act gold" data-act="riichi" ${canRiichi ? '' : 'disabled'}>${t('riichiDiscard')}</button>`;
+      <button type="button" class="act big" data-act="discard" ${sel == null ? 'disabled' : ''}>${t('discard')}</button>
+      <button type="button" class="act big gold" data-act="riichi" ${canRiichi ? '' : 'disabled'}>${t('riichiDiscard')}</button>`;
   } else if (pending?.type === 'tsumo') {
     actions = `
-      <button type="button" class="act gold" data-act="yes">${t('tsumo')}</button>
-      ${me.riichi ? '' : `<button type="button" class="act" data-act="no">${t('keepGoing')}</button>`}`;
+      ${me.riichi ? '' : `<button type="button" class="act big" data-act="no">${t('keepGoing')}</button>`}
+      <button type="button" class="act big gold call" data-act="yes">${t('tsumo')}</button>`;
   } else if (pending?.type === 'ron') {
     actions = `
-      <button type="button" class="act gold" data-act="yes">${t('ron')}</button>
-      <button type="button" class="act" data-act="no">${t('pass')}</button>`;
+      <button type="button" class="act big" data-act="no">${t('pass')}</button>
+      <button type="button" class="act big gold call" data-act="yes">${t('ron')}</button>`;
   }
   const ronTile = pending?.type === 'ron' ? `<span class="plus">+</span>${tile(pending.tile, { size: 'lg', win: true })}` : '';
-  const isDealer = g && g.dealer === HUMAN;
+  const status = statusText();
   return `
-    <section class="seat me ${g && !g.over && g.turn === HUMAN ? 'active' : ''} ${me.riichi ? 'in-riichi' : ''}" aria-label="${t('you')}">
-      <p class="status" role="status">${statusText()}</p>
-      <div class="me-row">
-        <div class="purse">
-          <span class="name">${t('you')}${isDealer ? `<span class="dealer">${t('dealer')}</span>` : ''}</span>
-          <span class="pts">${pts}<small>${t('pts')}</small></span>
-          <span class="near">${(pts * NEAR_PER_POINT).toFixed(1)} NEAR</span>
-          ${riichiStick(me.riichi, HUMAN)}
-        </div>
-        <div class="hand ${once('deal') ? 'deal' : ''}" role="group" aria-label="hand">
-          ${hand.map(render1).join('')}
-          ${drawn ? `<span class="gap"></span>${tile(drawn.c, { size: 'lg', button: discarding, index: drawn.index, selected: ui.selected === drawn.index, mark: discarding && marks[drawn.index], win: winSet, drawnIn: once('drawn') })}` : ''}
-          ${ronTile}
-        </div>
-      </div>
-      <div class="actions">${actions}</div>
-    </section>`;
+    ${status ? `<p class="status" role="status">${status}</p>` : '<p class="status empty" role="status"></p>'}
+    <div class="hand ${once('deal') ? 'deal' : ''} ${g && !g.over && g.turn === HUMAN ? 'my-turn' : ''}" role="group" aria-label="hand">
+      ${hand.map(render1).join('')}
+      ${drawn ? `<span class="gap"></span>${tile(drawn.c, { size: 'lg', button: discarding, index: drawn.index, selected: ui.selected === drawn.index, mark: discarding && marks[drawn.index], win: winSet, drawnIn: once('drawn') })}` : ''}
+      ${ronTile}
+    </div>
+    <div class="actions">${actions}</div>`;
 }
 
-function logPanel() {
-  return ui.log.map(e => `<li class="${e.kind}">${escapeHtml(e.text)}</li>`).join('');
+function fitStage() {
+  const s = Math.min(window.innerWidth / STAGE_W, window.innerHeight / STAGE_H);
+  document.documentElement.style.setProperty('--s', String(s));
 }
+window.addEventListener('resize', fitStage);
+fitStage();
 
 function escapeHtml(s) {
   return String(s).replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
@@ -807,7 +840,7 @@ function resultOverlay() {
     <div class="sheet result">
       <p class="eyebrow">${t('hand')} ${r.handNo + 1} · ${r.type === 'ron' ? t('resultRon') : t('resultTsumo')}</p>
       <h2>${seatName(r.winner)} — ${t(`hands.${r.ev.key}`)}</h2>
-      <div class="hand show">${r.hand.map(c => tile(c, { size: 'lg', win: true })).join('')}</div>
+      <div class="hand show">${r.hand.map(c => tile(c, { size: 'md', win: true })).join('')}</div>
       <p class="calc"><span>${r.ev.base}</span>${r.ev.jokers ? ` × <span class="gold-text">${t('jokerBonus', { mult: r.ev.mult })}</span>` : ''}
         ${r.type === 'ron' ? ' × 3' : ''} = <b>${r.ev.points * (r.type === 'ron' ? 3 : 1)}${t('pts')}</b>${r.type === 'tsumo' ? ` <small>(${t('everyonePays')})</small>` : ''}</p>
       <ul class="transfers">${lines}</ul>
@@ -876,12 +909,9 @@ function render() {
   document.documentElement.lang = getLang();
   $('#lang').textContent = t('lang');
   $('#rulesBtn').textContent = t('rules');
-  $('#seat-top').innerHTML = opponentPanel(2, 'top');
-  $('#seat-left').innerHTML = opponentPanel(3, 'side');
-  $('#seat-right').innerHTML = opponentPanel(1, 'side');
   $('#board').innerHTML = board();
   $('#mine').innerHTML = myArea();
-  $('#log').innerHTML = logPanel();
+  $('#rotateHint').textContent = t('rotateHint');
   const ov = $('#overlay');
   const view = { intro: introOverlay, result: resultOverlay, final: finalOverlay, rules: rulesOverlay, chain: chainOverlay }[ui.overlay];
   ov.hidden = !view;

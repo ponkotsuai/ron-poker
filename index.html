@@ -12,28 +12,25 @@
 </head>
 <body>
 <!--BODY-->
-<header class="bar">
-  <p class="logo">RON<span>POKER</span></p>
-  <span class="spacer"></span>
-  <button type="button" class="chip-btn sound-btn" id="soundBtn">Sound</button>
-  <button type="button" class="chip-btn" id="rulesBtn">Rules</button>
-  <button type="button" class="chip-btn" id="lang">English</button>
-</header>
-<div class="page">
-  <main class="table">
-    <div id="seat-top" class="area-top"></div>
-    <div id="seat-left" class="area-left"></div>
-    <div id="board" class="area-board"></div>
-    <div id="seat-right" class="area-right"></div>
-    <div id="mine" class="area-me"></div>
-  </main>
-  <aside class="logbox" aria-label="Table log">
-    <h2>Log</h2>
-    <ol id="log"></ol>
-  </aside>
+<div id="viewport">
+  <div id="stage">
+    <main class="table">
+      <div class="felt" aria-hidden="true"><span class="watermark">RON<span>POKER</span></span></div>
+      <div id="board"></div>
+      <div id="mine"></div>
+      <header class="hud">
+        <p class="logo">RON<span>POKER</span></p>
+        <span class="spacer"></span>
+        <button type="button" class="chip-btn sound-btn" id="soundBtn">Sound</button>
+        <button type="button" class="chip-btn" id="rulesBtn">Rules</button>
+        <button type="button" class="chip-btn" id="lang">English</button>
+      </header>
+    </main>
+  </div>
 </div>
+<p class="rotate-hint" id="rotateHint"></p>
 <div id="overlay" hidden></div>
 <!--/BODY-->
-<script type="module" src="assets/app.js?v=8a4f20b02e"></script>
+<script type="module" src="assets/app.js?v=6cbcb4e79a"></script>
 </body>
 </html>

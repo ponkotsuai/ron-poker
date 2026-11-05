@@ -6,6 +6,7 @@ export const STRINGS = {
     hand: 'Hand',
     wall: 'Wall',
     dealer: 'Dealer',
+    dealerShort: 'D',
     rules: 'Rules',
     close: 'Close',
     you: 'You',
@@ -131,6 +132,8 @@ export const STRINGS = {
     soundOff: '♪ OFF',
     handBanner: 'Hand {n}',
     handBannerSub: 'HAND {n} / {total}',
+    rotateHint: 'Turn your phone sideways for a bigger table',
+    left: '{n} left',
     rulesTitle: 'How to play',
     rulesBody: [
       'Four players, 52 cards plus 2 jokers. Everyone holds 4 cards.',
@@ -149,6 +152,7 @@ export const STRINGS = {
     hand: '局',
     wall: '山',
     dealer: '親',
+    dealerShort: '親',
     rules: 'ルール',
     close: '閉じる',
     you: 'あなた',
@@ -274,6 +278,8 @@ export const STRINGS = {
     soundOff: '♪ OFF',
     handBanner: '第{n}局',
     handBannerSub: 'HAND {n} / {total}',
+    rotateHint: 'スマホを横向きにすると卓が大きくなります',
+    left: '残り {n}',
     rulesTitle: '遊び方',
     rulesBody: [
       '4人対戦。トランプ52枚とジョーカー2枚を使い、手札は各4枚。',
