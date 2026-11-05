@@ -3,7 +3,13 @@
 // on first play, and their keys never leave that browser (see js/chain.js, setupAgents).
 
 export const NETWORK = 'testnet';
-export const RPC_URL = 'https://rpc.testnet.near.org';
+// Public testnet RPC endpoints, tried in order (all allow browser requests).
+export const RPC_URLS = [
+  'https://test.rpc.fastnear.com',
+  'https://near-testnet.drpc.org',
+  'https://rpc.testnet.fastnear.com',
+  'https://rpc.testnet.near.org',
+];
 export const EXPLORER = 'https://testnet.nearblocks.io';
 export const CONTRACT_ID = 'ronpoker-jir3s.testnet';
 export const BUY_IN_YOCTO = 3n * 10n ** 24n; // 3 NEAR = 30 points

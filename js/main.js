@@ -209,8 +209,16 @@ async function refreshBankrolls() {
   render();
 }
 
+function chainFail(e) {
+  console.error(e);
+  ui.chain.error = String(e?.message || e).slice(0, 200);
+  ui.chain.busy = false;
+  render();
+}
+
+// Step 1 (click): connect the wallet, refund leftovers, prepare AI wallets, open the table.
 async function startChainGame() {
-  ui.chain = { human: null, tableId: null, seed: null, steps: [], bankrolls: {}, error: null, busy: true, settled: null };
+  ui.chain = { phase: 'connecting', human: null, tableId: null, seed: null, steps: [], bankrolls: {}, error: null, busy: true, settled: null, points: null };
   ui.overlay = 'chain';
   render();
   try {
@@ -219,30 +227,68 @@ async function startChainGame() {
     if (!human) throw new Error(t('noAccount'));
     ui.chain.human = human;
     chainStep('chainConnected', { account: human });
+    ui.chain.phase = 'preparing';
     await chain.setupAgents(chainStep);
+    await chain.cleanupStaleTables(chainStep);
     await refreshBankrolls();
     const seed = await chain.newSeed();
     ui.chain.seed = seed;
     const { tableId } = await chain.openTable({ human, seats: SEAT_KEYS, seedHash: seed.hash, onStep: chainStep });
     ui.chain.tableId = tableId;
-    await refreshBankrolls();
+    ui.chain.phase = 'needPay';
     ui.chain.busy = false;
-    const g = newGame(seed.number);
-    ui.overlay = null;
-    render();
-    await g.play();
-    ui.chain.busy = true;
-    ui.overlay = 'final';
-    render();
-    const table = await chain.settleTable({ tableId, seats: SEAT_KEYS, points: g.points, seed: seed.seed, onStep: chainStep });
-    ui.chain.settled = table;
-    ui.chain.busy = false;
+    chainStep('chainHumanPay');
+  } catch (e) { chainFail(e); }
+}
+
+// Step 2 (click): pay the buy-in in Meteor, then the AIs pay, then the game starts.
+async function payBuyIn() {
+  const c = ui.chain;
+  c.error = null;
+  c.busy = true;
+  c.phase = 'joining';
+  render();
+  try {
+    const table = await chain.getTable(c.tableId);
+    if (!table.joined[0]) {
+      const hash = await chain.humanJoin(c.tableId);
+      chainStep('chainHumanPaid', { hash });
+    }
+    await chain.aiJoinAll({ tableId: c.tableId, seats: SEAT_KEYS, onStep: chainStep });
     await refreshBankrolls();
   } catch (e) {
-    console.error(e);
-    ui.chain.error = String(e?.message || e).slice(0, 200);
-    ui.chain.busy = false;
-    render();
+    c.phase = 'needPay';
+    chainFail(e);
+    return;
+  }
+  c.busy = false;
+  c.phase = 'playing';
+  const g = newGame(c.seed.number);
+  ui.overlay = null;
+  render();
+  await g.play();
+  c.points = g.points.slice();
+  c.phase = 'needSign';
+  ui.overlay = 'final';
+  render();
+}
+
+// Step 3 (click): sign the scoresheet; the AIs sign the same one; the contract pays out.
+async function signResult() {
+  const c = ui.chain;
+  c.error = null;
+  c.busy = true;
+  c.phase = 'settling';
+  render();
+  try {
+    const table = await chain.settleTable({ tableId: c.tableId, seats: SEAT_KEYS, points: c.points, seed: c.seed.seed, onStep: chainStep });
+    c.settled = table.status === 'Settled' ? table : null;
+    c.phase = c.settled ? 'settled' : 'needSign';
+    c.busy = false;
+    await refreshBankrolls();
+  } catch (e) {
+    c.phase = 'needSign';
+    chainFail(e);
   }
 }
 
@@ -274,7 +320,8 @@ function chainOverlay() {
       <p class="eyebrow">NEAR testnet · <a href="${chain.explorerAccount(chain.CONTRACT_ID)}" target="_blank" rel="noopener">${chain.CONTRACT_ID}</a></p>
       <h2>${t('chainTitle')}</h2>
       ${chainSteps()}
-      ${c.error ? `<div class="row"><button type="button" class="act gold primary" data-act="startChain">${t('retry')}</button><button type="button" class="act" data-act="backToIntro">${t('close')}</button></div>` : ''}
+      ${c.phase === 'needPay' && !c.busy ? `<div class="row"><button type="button" class="act gold primary" data-act="payBuyIn">${t('payBuyIn')}</button><button type="button" class="act" data-act="backToIntro">${t('close')}</button></div>` : ''}
+      ${c.error && c.phase !== 'needPay' ? `<div class="row"><button type="button" class="act gold primary" data-act="startChain">${t('retry')}</button><button type="button" class="act" data-act="backToIntro">${t('close')}</button></div>` : ''}
     </div>`;
 }
 
@@ -539,9 +586,10 @@ function finalOverlay() {
       ${ui.chain ? chainSteps() : `<p class="note">${t('seed')}: <code>${g.seed}</code></p>`}
       ${ui.chain && ui.chain.settled && ui.chain.bankrolls.human > 0n ? `<p>${t('yourBankroll', { near: chain.yoctoToNear(ui.chain.bankrolls.human) })}</p>` : ''}
       <div class="row">
+        ${ui.chain?.phase === 'needSign' && !ui.chain.busy ? `<button type="button" class="act gold primary" data-act="signResult">${t('signResult')}</button>` : ''}
         ${ui.chain && ui.chain.settled && ui.chain.bankrolls.human > 0n && !ui.chain.busy ? `<button type="button" class="act gold" data-act="cashOut">${t('cashOut')}</button>` : ''}
-        ${ui.chain?.busy ? '' : `<button type="button" class="act ${ui.chain ? '' : 'gold'} primary" data-act="${ui.chain ? 'startChain' : 'start'}">${t('playAgain')}</button>`}
-        ${ui.chain?.busy ? '' : `<button type="button" class="act" data-act="backToIntro">${t('backToMenu')}</button>`}
+        ${ui.chain?.busy || ui.chain?.phase === 'needSign' ? '' : `<button type="button" class="act ${ui.chain ? '' : 'gold'} primary" data-act="${ui.chain ? 'startChain' : 'start'}">${t('playAgain')}</button>`}
+        ${ui.chain?.busy || ui.chain?.phase === 'needSign' ? '' : `<button type="button" class="act" data-act="backToIntro">${t('backToMenu')}</button>`}
       </div>
     </div>`;
 }
@@ -597,6 +645,8 @@ document.addEventListener('click', ev => {
   if (act === 'start') startGame();
   if (act === 'startChain') startChainGame();
   if (act === 'cashOut') cashOut();
+  if (act === 'payBuyIn') payBuyIn();
+  if (act === 'signResult') signResult();
   if (act === 'backToIntro') { ui.overlay = 'intro'; render(); }
   if (act === 'rules') { ui.overlayBefore = ui.overlay; ui.overlay = 'rules'; render(); }
   if (act === 'closeRules') { ui.overlay = ui.overlayBefore; ui.overlayBefore = null; render(); }
@@ -619,6 +669,7 @@ $('#rulesBtn').addEventListener('click', () => {
 });
 
 render();
+if (!PREVIEW) chain.warmUp();
 
 // Developer hook: with #debug in the address, expose the chain helpers for manual testing.
 if (!PREVIEW && location.hash === '#debug') window.ronDebug = { chain, ui };

@@ -6,16 +6,17 @@
 //    Their keys are kept in this browser's storage and never sent anywhere.
 // Nobody holds the pot: the contract pays out only when all four scoresheets match.
 
-import { Account, JsonRpcProvider, KeyPair, KeyPairSigner } from 'near-api-js';
+import { Account, FailoverRpcProvider, JsonRpcProvider, KeyPair, KeyPairSigner } from 'near-api-js';
 import { actionCreators } from '@near-js/transactions';
 import { setupWalletSelector } from '@near-wallet-selector/core';
 import { setupMeteorWallet } from '@near-wallet-selector/meteor-wallet';
 import {
-  NETWORK, RPC_URL, EXPLORER, CONTRACT_ID, BUY_IN_YOCTO, FAUCET_URL, AI_BANKROLL_YOCTO, AI_METHODS, AI_GAS_ALLOWANCE_YOCTO,
+  NETWORK, RPC_URLS, EXPLORER, CONTRACT_ID, BUY_IN_YOCTO, FAUCET_URL, AI_BANKROLL_YOCTO, AI_METHODS, AI_GAS_ALLOWANCE_YOCTO,
 } from './config.js';
 
 const GAS = 30_000_000_000_000n;
-const provider = new JsonRpcProvider({ url: RPC_URL });
+// Several public testnet RPC endpoints; if one is rate-limited or down, the next one is used.
+const provider = new FailoverRpcProvider(RPC_URLS.map(url => new JsonRpcProvider({ url }, { retries: 2, backoff: 1.5, wait: 300 })));
 let selector = null;
 
 export const explorerTx = hash => `${EXPLORER}/txns/${hash}`;
@@ -100,11 +101,23 @@ export function yoctoToNear(y, digits = 2) {
 
 // ---- human wallet ------------------------------------------------------
 
-async function getSelector() {
-  if (!selector) {
-    selector = await setupWalletSelector({ network: NETWORK, modules: [setupMeteorWallet()] });
+let selectorPromise = null;
+let walletInstance = null;
+function getSelector() {
+  if (!selectorPromise) {
+    selectorPromise = setupWalletSelector({
+      network: { networkId: NETWORK, nodeUrl: RPC_URLS[0], helperUrl: '', explorerUrl: EXPLORER, indexerUrl: '' },
+      modules: [setupMeteorWallet()],
+    }).then(s => { selector = s; return s; });
   }
-  return selector;
+  return selectorPromise;
+}
+// Start loading the wallet library right away, so a later button press can open
+// the wallet's approval window immediately (browsers only allow popups right after a click).
+export function warmUp() {
+  getSelector().then(async s => {
+    if (s.store.getState().accounts.length) walletInstance = await s.wallet();
+  }).catch(() => {});
 }
 
 export async function currentAccount() {
@@ -117,6 +130,7 @@ export async function connectWallet() {
   const s = await getSelector();
   const wallet = await s.wallet('meteor-wallet');
   const accounts = await wallet.signIn({ contractId: CONTRACT_ID, methodNames: ['submit_result', 'abort'] });
+  walletInstance = wallet;
   return accounts[0]?.accountId || currentAccount();
 }
 
@@ -126,9 +140,9 @@ export async function disconnectWallet() {
   await wallet.signOut();
 }
 
+// Call this directly from a click handler: Meteor opens a popup to approve the transaction.
 async function humanCall(method, args, deposit = 0n) {
-  const s = await getSelector();
-  const wallet = await s.wallet();
+  const wallet = walletInstance || (walletInstance = await (await getSelector()).wallet());
   const outcome = await wallet.signAndSendTransaction({
     receiverId: CONTRACT_ID,
     actions: [actionCreators.functionCall(method, args, GAS, deposit)],
@@ -172,8 +186,8 @@ export async function newSeed() {
 }
 
 /**
- * Open a table, have the AIs pay in from their bankrolls, then ask the human to pay.
- * `onStep(key, data)` reports progress for the table log.
+ * Step 1 (no wallet popup): an AI opens the table and commits the seed.
+ * The AIs pay only after the human has paid, so nobody's buy-in waits on an absent player.
  */
 export async function openTable({ human, seats, seedHash, onStep }) {
   // seats: ['human', 'tanuki', 'tsuru', 'kitsune'] in seat order
@@ -182,31 +196,77 @@ export async function openTable({ human, seats, seedHash, onStep }) {
   const created = await aiCall(opener, 'create_table', { players, seed_hash: seedHash });
   const tableId = created.value;
   onStep('chainTableOpened', { id: tableId, by: opener, hash: created.hash });
-  for (const s of seats) {
-    if (s === 'human') continue;
-    const joined = await aiCall(s, 'join', { table_id: tableId });
-    onStep('chainAiJoined', { who: s, hash: joined.hash });
-  }
-  onStep('chainHumanPay', {});
-  const outcome = await humanCall('join', { table_id: tableId }, BUY_IN_YOCTO);
-  const table = await view('get_table', { table_id: tableId });
-  if (table.status !== 'Playing') throw new Error(`table ${tableId} is ${table.status}`);
-  onStep('chainGameOn', { id: tableId, hash: outcome?.transaction?.hash });
   return { tableId, players };
 }
 
-/** Every player submits the same final points and reveals the seed. */
+/** Step 2 (click → wallet popup): the human pays the buy-in. */
+export async function humanJoin(tableId) {
+  const outcome = await humanCall('join', { table_id: tableId }, BUY_IN_YOCTO);
+  return outcome?.transaction?.hash || null;
+}
+
+/** Step 3: each AI pays from its own bankroll. Resolves when the table is in play. */
+export async function aiJoinAll({ tableId, seats, onStep }) {
+  let table = await view('get_table', { table_id: tableId });
+  for (let i = 0; i < seats.length; i++) {
+    const s = seats[i];
+    if (s === 'human' || table.joined[i]) continue;
+    const joined = await aiCall(s, 'join', { table_id: tableId });
+    onStep('chainAiJoined', { who: s, hash: joined.hash });
+  }
+  table = await view('get_table', { table_id: tableId });
+  if (table.status !== 'Playing') throw new Error(`table ${tableId} is ${table.status}`);
+  onStep('chainGameOn', { id: tableId });
+  return table;
+}
+
+export async function getTable(tableId) {
+  return view('get_table', { table_id: tableId });
+}
+
+/** Final step (click): the human signs first, then each AI signs the same scoresheet. */
 export async function settleTable({ tableId, seats, points, seed, onStep }) {
-  for (const s of seats) {
-    if (s === 'human') continue;
+  const table0 = await view('get_table', { table_id: tableId });
+  const humanSeat = seats.indexOf('human');
+  let hash = null;
+  if (!table0.submissions[humanSeat]) {
+    const outcome = await humanCall('submit_result', { table_id: tableId, points, seed });
+    hash = outcome?.transaction?.hash || null;
+  }
+  onStep('chainHumanSigned', { hash });
+  for (let i = 0; i < seats.length; i++) {
+    const s = seats[i];
+    if (s === 'human' || table0.submissions[i]) continue;
     const r = await aiCall(s, 'submit_result', { table_id: tableId, points, seed });
     onStep('chainAiSigned', { who: s, hash: r.hash });
   }
-  onStep('chainHumanSign', {});
-  const outcome = await humanCall('submit_result', { table_id: tableId, points, seed });
   const table = await view('get_table', { table_id: tableId });
-  onStep('chainSettled', { id: tableId, status: table.status, hash: outcome?.transaction?.hash });
+  if (table.status === 'Settled') onStep('chainSettled', { id: tableId });
   return table;
+}
+
+/**
+ * Refund tables this browser's AIs left waiting (for example after a closed wallet window).
+ * An AI may abort a waiting table at any time; the contract refunds every paid buy-in.
+ */
+export async function cleanupStaleTables(onStep, keep = null) {
+  const [, , timeoutNs, next] = await view('get_config');
+  const mine = new Map(Object.entries(AI_ACCOUNTS).map(([k, v]) => [v.accountId, k]));
+  const now = BigInt(Date.now()) * 1_000_000n;
+  for (let id = Math.max(0, next - 30); id < next; id++) {
+    if (id === keep) continue;
+    const t = await view('get_table', { table_id: id });
+    if (!t) continue;
+    const aiSeat = t.players.findIndex(p => mine.has(p));
+    if (aiSeat < 0) continue;
+    const expired = t.status === 'Playing' && now >= BigInt(t.started_at_ns) + BigInt(timeoutNs);
+    if (t.status === 'Waiting' || expired) {
+      try {
+        const r = await aiCall(mine.get(t.players[aiSeat]), 'abort', { table_id: id });
+        onStep('chainRefunded', { id, hash: r.hash });
+      } catch { /* someone else closed it first */ }
+    }
+  }
 }
 
 export async function withdrawAll() {
