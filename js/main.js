@@ -228,8 +228,9 @@ async function startChainGame() {
     ui.chain.human = human;
     chainStep('chainConnected', { account: human });
     ui.chain.phase = 'preparing';
-    await chain.setupAgents(chainStep);
+    // Refund tables left waiting by an earlier, interrupted attempt before checking bankrolls.
     await chain.cleanupStaleTables(chainStep);
+    await chain.setupAgents(chainStep);
     await refreshBankrolls();
     const seed = await chain.newSeed();
     ui.chain.seed = seed;

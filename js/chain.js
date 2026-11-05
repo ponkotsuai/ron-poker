@@ -77,10 +77,15 @@ export async function setupAgents(onStep) {
       onStep('chainAgentKey', { who: id });
     }
     if ((await bankrollOf(agent.accountId)) < BUY_IN_YOCTO) {
+      // Top up with what the AI's own wallet can afford, keeping 0.5 NEAR for gas and storage.
+      const { amount } = await provider.viewAccount({ accountId: agent.accountId, finality: 'final' });
+      const spendable = BigInt(amount) - 5n * 10n ** 23n;
+      const deposit = spendable < AI_BANKROLL_YOCTO ? spendable : AI_BANKROLL_YOCTO;
+      if (deposit < BUY_IN_YOCTO) throw new Error(`${agent.accountId} has run out of testnet NEAR`);
       const r = await sponsorAccount.callFunctionRaw({
-        contractId: CONTRACT_ID, methodName: 'deposit', args: {}, deposit: AI_BANKROLL_YOCTO, gas: GAS,
+        contractId: CONTRACT_ID, methodName: 'deposit', args: {}, deposit, gas: GAS,
       });
-      onStep('chainAgentFunded', { who: id, hash: r.transaction.hash });
+      onStep('chainAgentFunded', { who: id, near: yoctoToNear(deposit, 1), hash: r.transaction.hash });
     }
   }
 }
