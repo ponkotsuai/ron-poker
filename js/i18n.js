@@ -127,6 +127,10 @@ export const STRINGS = {
     yourBankroll: 'Your bankroll in the table contract: {near} NEAR.',
     cashOut: 'Cash out to wallet',
     backToMenu: 'Menu',
+    soundOn: '♪ ON',
+    soundOff: '♪ OFF',
+    handBanner: 'Hand {n}',
+    handBannerSub: 'HAND {n} / {total}',
     rulesTitle: 'How to play',
     rulesBody: [
       'Four players, 52 cards plus 2 jokers. Everyone holds 4 cards.',
@@ -266,6 +270,10 @@ export const STRINGS = {
     yourBankroll: '卓のコントラクトにあるあなたの残高：{near} NEAR',
     cashOut: 'ウォレットに引き出す',
     backToMenu: 'メニューへ',
+    soundOn: '♪ ON',
+    soundOff: '♪ OFF',
+    handBanner: '第{n}局',
+    handBannerSub: 'HAND {n} / {total}',
     rulesTitle: '遊び方',
     rulesBody: [
       '4人対戦。トランプ52枚とジョーカー2枚を使い、手札は各4枚。',

@@ -5,6 +5,7 @@ import { AIController, PERSONALITIES, moodOf } from './ai.js';
 import { isTenpai, BASE_POINTS, CAT_KEYS, START_POINTS } from './engine.js';
 import { t, getLang, setLang } from './i18n.js';
 import * as chain from './chain.js';
+import * as fx from './fx.js';
 
 const NEAR_PER_POINT = 0.1;
 // Set at build time. The chat preview cannot reach NEAR, so it offers practice mode only.
@@ -33,6 +34,7 @@ const ui = {
   lastDiscard: null,
   thinking: null,
   overlay: 'intro', // intro | result | final | rules | chain | null
+  once: {}, // one-shot animations: { key: { v, at } }, honoured for a moment after they are set
   seats: PRACTICE_SEATS,
   overlayBefore: null,
   result: null,
@@ -48,6 +50,12 @@ function saveNick(n) {
   try { localStorage.setItem('ronpoker.nick', n); } catch { /* ignore */ }
 }
 ui.nick = loadNick();
+
+function setOnce(key, v) { ui.once[key] = { v, at: Date.now() }; }
+function once(key) {
+  const o = ui.once[key];
+  return o && Date.now() - o.at < 350 ? o.v : undefined;
+}
 
 function seatName(seat) {
   if (seat === HUMAN) return ui.nick ? escapeHtml(ui.nick) : t('you');
@@ -161,6 +169,9 @@ function onEvent(type, e) {
   const g = ui.game;
   if (type === 'handStart') {
     ui.lastDiscard = null;
+    setOnce('deal', true);
+    fx.banner(t('handBanner', { n: e.handNo + 1 }), t('handBannerSub', { n: e.handNo + 1, total: g.totalHands }));
+    fx.sound('deal');
     pushLog(t('logHandStart', { n: e.handNo + 1, total: g.totalHands, dealer: seatName(e.dealer) }), 'sep');
     for (const seat of [1, 2, 3]) {
       if (ui.seats[seat]?.kind !== 'ai') continue;
@@ -171,21 +182,56 @@ function onEvent(type, e) {
       ui.moods[seat] = mood;
     }
   }
+  if (type === 'draw' && e.seat === HUMAN) {
+    setOnce('drawn', true);
+    fx.sound('draw');
+  }
   if (type === 'discard') {
     ui.lastDiscard = { seat: e.seat, id: e.card.id };
+    setOnce('land', `${e.seat}:${e.card.id}`);
+    fx.sound('tile');
+    if (e.riichi) {
+      setOnce('stick', e.seat);
+      fx.sound('riichi');
+      fx.cutIn('riichi', { title: 'リーチ', kanji: '立直', who: seatName(e.seat) });
+    }
     const key = e.riichi ? 'logRiichi' : 'logDiscard';
     pushLog(t(key, { name: seatName(e.seat), card: cardLabel(e.card) }), e.riichi ? 'riichi' : '');
   }
   if (type === 'win') {
     const params = { name: seatName(e.winner), hand: t(`hands.${e.ev.key}`), points: e.ev.points };
+    const big = e.ev.cat >= 8;
+    const total = e.ev.points * (e.type === 'ron' ? 3 : 1);
+    fx.sound(big ? 'yakuman' : e.type);
+    fx.cutIn(big ? 'yakuman' : e.type, {
+      title: big ? '役満' : e.type === 'ron' ? 'ロン' : 'ツモ',
+      kanji: big ? t(`hands.${e.ev.key}`) : e.type === 'ron' ? '栄和' : '自摸',
+      who: seatName(e.winner),
+      sub: `${t(`hands.${e.ev.key}`)}${e.ev.jokers ? ` × JOKER ${e.ev.mult}` : ''}　${total}${t('pts')}`,
+    });
+    // chips fly from whoever paid to the winner once the cut-in clears
+    fx.idle().then(() => {
+      for (const x of e.transfers || []) fx.coins(seatEl(x.from), seatEl(x.to), x.amount);
+    });
     if (e.type === 'ron') pushLog(t('logRon', { ...params, loser: seatName(e.loser) }), 'win');
     else pushLog(t('logTsumo', params), 'win');
   }
-  if (type === 'exhausted') pushLog(t('logExhausted'), 'sep');
+  if (type === 'exhausted') {
+    pushLog(t('logExhausted'), 'sep');
+    fx.banner('流局', t('resultExhausted'));
+  }
+  if (type === 'gameEnd') fx.sound('gameEnd');
   render();
 }
 
-function showResult(record) {
+function seatEl(seat) {
+  return $(['#mine', '#seat-right', '#seat-top', '#seat-left'][seat]);
+}
+
+async function showResult(record) {
+  // let the cut-in and the flying chips play before the result sheet covers the table
+  await fx.idle();
+  if (record.type !== 'exhausted') await sleep(reduceMotion ? 100 : 900);
   return new Promise(resolve => {
     ui.result = record;
     ui.overlay = 'result';
@@ -551,6 +597,8 @@ function tile(c, opts = {}) {
   else if (c.s === 'h' || c.s === 'd') cls.push('red');
   if (opts.sideways) cls.push('sideways');
   if (opts.fresh) cls.push('fresh');
+  if (opts.land) cls.push('land');
+  if (opts.drawnIn) cls.push('drawn-in');
   if (opts.selected) cls.push('selected');
   if (opts.win) cls.push('win');
   const inner = c.joker
@@ -568,11 +616,12 @@ function river(p, seat) {
     size: 'xs',
     sideways: p.riichiAt === i,
     fresh: ui.lastDiscard && ui.lastDiscard.seat === seat && ui.lastDiscard.id === c.id,
+    land: once('land') === `${seat}:${c.id}`,
   })).join('');
 }
 
-function riichiStick(on) {
-  return on ? `<span class="stick" title="Riichi"><span></span></span>` : '';
+function riichiStick(on, seat) {
+  return on ? `<span class="stick ${once('stick') === seat ? 'new' : ''}" title="Riichi"><span></span></span>` : '';
 }
 
 function opponentPanel(seat, side) {
@@ -601,7 +650,7 @@ function opponentPanel(seat, side) {
         <span class="near">${(pts * NEAR_PER_POINT).toFixed(1)} NEAR</span>
         ${isAI ? `<span class="mood ${mood}">${t(`moods.${mood}`)}</span>` : ''}
         ${isAI && ui.chain && ui.chain.bankrolls[id] != null ? `<span class="wallet" title="${ui.chain.agents?.[id] || ''}">${t('bankroll')} ${chain.yoctoToNear(ui.chain.bankrolls[id], 1)} NEAR</span>` : ''}
-        ${riichiStick(p.riichi)}
+        ${riichiStick(p.riichi, seat)}
       </div>
       <p class="bubble ${ui.thinking === seat ? 'thinking' : ''}">${ui.thinking === seat ? '<span class="dots"><i></i><i></i><i></i></span>' : bubbleText}</p>
       <div class="backs">${p.hand.map(() => tile(null, { back: true, size: 'xxs' })).join('')}</div>
@@ -694,11 +743,11 @@ function myArea() {
           <span class="name">${t('you')}${isDealer ? `<span class="dealer">${t('dealer')}</span>` : ''}</span>
           <span class="pts">${pts}<small>${t('pts')}</small></span>
           <span class="near">${(pts * NEAR_PER_POINT).toFixed(1)} NEAR</span>
-          ${riichiStick(me.riichi)}
+          ${riichiStick(me.riichi, HUMAN)}
         </div>
-        <div class="hand" role="group" aria-label="hand">
+        <div class="hand ${once('deal') ? 'deal' : ''}" role="group" aria-label="hand">
           ${hand.map(render1).join('')}
-          ${drawn ? `<span class="gap"></span>${render1(drawn)}` : ''}
+          ${drawn ? `<span class="gap"></span>${tile(drawn.c, { size: 'lg', button: discarding, index: drawn.index, selected: ui.selected === drawn.index, mark: discarding && marks[drawn.index], win: winSet, drawnIn: once('drawn') })}` : ''}
           ${ronTile}
         </div>
       </div>
@@ -837,6 +886,7 @@ function render() {
   const view = { intro: introOverlay, result: resultOverlay, final: finalOverlay, rules: rulesOverlay, chain: chainOverlay }[ui.overlay];
   ov.hidden = !view;
   ov.innerHTML = view ? view() : '';
+  $('#soundBtn').textContent = fx.isMuted() ? t('soundOff') : t('soundOn');
 }
 
 // ---- input -------------------------------------------------------------
@@ -880,6 +930,12 @@ document.addEventListener('input', ev => {
     ui.nick = ev.target.value.replace(/[\u0000-\u001f<>&"'`]/g, '').slice(0, 12);
     saveNick(ui.nick);
   }
+});
+
+$('#soundBtn').addEventListener('click', () => {
+  fx.setMuted(!fx.isMuted());
+  if (!fx.isMuted()) fx.sound('coin');
+  render();
 });
 
 $('#lang').addEventListener('click', () => {
