@@ -226,9 +226,14 @@ function mirrorGame(s) {
   };
 }
 
-function onRefereeMessage(m) {
+// Each connection is tied to the game it was opened for; messages from an older game are ignored.
+function listen(state) {
+  return chain.connectReferee(m => onRefereeMessage(m, state), () => onRefereeClose(state));
+}
+
+function onRefereeMessage(m, state) {
   const c = ui.chain;
-  if (!c) return;
+  if (!c || c !== state) return;
   switch (m.t) {
     case 'hello':
       c.agents = m.agents;
@@ -301,13 +306,13 @@ function onRefereeMessage(m) {
   }
 }
 
-function onRefereeClose() {
+function onRefereeClose(state) {
   const c = ui.chain;
-  if (!c || c.phase === 'settled' || c.closing) return;
+  if (!c || c !== state || c.phase === 'settled' || c.closing) return;
   if (c.phase === 'playing' && c.session && c.tableId != null) {
     // Reconnect and pick the game up where it is. Until then the referee plays safe moves for you.
     setTimeout(() => {
-      c.conn = chain.connectReferee(onRefereeMessage, onRefereeClose);
+      c.conn = listen(c);
       c.conn.ready.then(() => c.conn.send({ t: 'resume', tableId: c.tableId, account: c.human, ...chain.signSeat(c.session, c.tableId, c.human) }))
         .catch(chainFail);
     }, 1500);
@@ -329,7 +334,7 @@ async function startChainGame() {
     ui.chain.human = human;
     chainStep('chainConnected', { account: human });
     chainStep('chainReferee');
-    const conn = chain.connectReferee(onRefereeMessage, onRefereeClose);
+    const conn = listen(ui.chain);
     ui.chain.conn = conn;
     await conn.ready;
     conn.send({ t: 'hello', account: human });
