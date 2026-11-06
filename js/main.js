@@ -32,7 +32,8 @@ const ui = {
   selected: null,
   lastDiscard: null,
   thinking: null,
-  overlay: 'intro', // intro | result | final | rules | chain | null
+  title: true, // the title screen sits over everything until you press Play
+  overlay: null, // intro | result | final | rules | chain | settings | ranking | null
   once: {}, // one-shot animations: { key: { v, at } }, honoured for a moment after they are set
   seats: null, // set below once your character is known
   expr: {}, // seat → { e: 'joy'|'angry'|'sad'|'fun', until } short reactions on the avatars
@@ -866,6 +867,7 @@ function scoreTable() {
 function introOverlay() {
   return `
     <div class="sheet intro">
+      <button type="button" class="act ghost to-title" data-act="toTitle">← ${t('title')}</button>
       <button type="button" class="act ghost lang-switch" data-act="lang" lang="${getLang() === 'ja' ? 'en' : 'ja'}">${t('lang')}</button>
       <p class="eyebrow">NEAR HACKATHON · testnet</p>
       <h1 class="logo">RON<span>POKER</span></h1>
@@ -958,6 +960,55 @@ function finalOverlay() {
     </div>`;
 }
 
+// ---- title screen ----
+// The artwork carries its own buttons; transparent hotspots sit on top of them.
+// Positions are in % of the 1536×1024 image. In English the small labels are covered.
+const TITLE_BUTTONS = [
+  { act: 'titlePlay', key: 'titlePlay', box: [505, 750, 530, 125], cls: 'play' },
+  { act: 'settings', key: 'settings', box: [345, 902, 245, 70], label: [36.7, 59] },
+  { act: 'ranking', key: 'ranking', box: [612, 902, 286, 70], label: [35, 60.5] },
+  { act: 'wallet', key: 'wallet', box: [922, 902, 268, 70], label: [40.3, 55] },
+];
+
+function titleScreen() {
+  const pct = (v, of) => `${(v / of * 100).toFixed(2)}%`;
+  return `
+    <div class="title-bg" aria-hidden="true" style="background-image:url(assets/title.webp)"></div>
+    <div class="title-art">
+      <img src="assets/title.webp" alt="Ron Poker" draggable="false">
+      <h1 class="sr-only">Ron Poker</h1>
+      ${TITLE_BUTTONS.map(b => `<button type="button" class="hot ${b.cls || ''}" data-act="${b.act}" aria-label="${t(b.key)}"
+        style="left:${pct(b.box[0], 1536)};top:${pct(b.box[1], 1024)};width:${pct(b.box[2], 1536)};height:${pct(b.box[3], 1024)}">
+        ${b.label && getLang() !== 'ja' ? `<span class="t-label" style="left:${b.label[0]}%;width:${b.label[1]}%">${t(b.key)}</span>` : ''}</button>`).join('')}
+    </div>
+`;
+}
+
+function settingsOverlay() {
+  const ja = getLang() === 'ja';
+  return `
+    <div class="sheet settings">
+      <h2>${t('settings')}</h2>
+      <div class="set-row"><span class="label">${t('language')}</span>
+        <div class="seg"><button type="button" class="act ${ja ? '' : 'gold'}" data-act="setLang" data-lang="en">English</button><button type="button" class="act ${ja ? 'gold' : ''}" data-act="setLang" data-lang="ja">日本語</button></div></div>
+      <div class="set-row"><span class="label">${t('sound')}</span>
+        <div class="seg"><button type="button" class="act ${fx.isMuted() ? '' : 'gold'}" data-act="setSound" data-on="1">ON</button><button type="button" class="act ${fx.isMuted() ? 'gold' : ''}" data-act="setSound" data-on="0">OFF</button></div></div>
+      <div class="row">
+        <button type="button" class="act" data-act="rules">${t('rules')}</button>
+        <button type="button" class="act gold primary" data-act="closeSheet">${t('close')}</button>
+      </div>
+    </div>`;
+}
+
+function rankingOverlay() {
+  return `
+    <div class="sheet ranking">
+      <h2>${t('ranking')}</h2>
+      <p class="note">${t('rankingSoon')}</p>
+      <div class="row"><button type="button" class="act gold primary" data-act="closeSheet">${t('close')}</button></div>
+    </div>`;
+}
+
 function rulesOverlay() {
   return `
     <div class="sheet rules">
@@ -977,7 +1028,13 @@ function render() {
   $('#mine').innerHTML = myArea();
   $('#rotateHint').textContent = t('rotateHint');
   const ov = $('#overlay');
-  const view = { intro: introOverlay, result: resultOverlay, final: finalOverlay, rules: rulesOverlay, chain: chainOverlay }[ui.overlay];
+  const title = $('#title');
+  if (title.hidden === ui.title || title.dataset.lang !== getLang()) {
+    title.hidden = !ui.title;
+    title.innerHTML = ui.title ? titleScreen() : '';
+    title.dataset.lang = ui.title ? getLang() : '';
+  }
+  const view = { intro: introOverlay, result: resultOverlay, final: finalOverlay, rules: rulesOverlay, chain: chainOverlay, settings: settingsOverlay, ranking: rankingOverlay }[ui.overlay];
   ov.hidden = !view;
   ov.innerHTML = view ? view() : '';
   $('#soundBtn').textContent = fx.isMuted() ? t('soundOff') : t('soundOn');
@@ -1010,6 +1067,16 @@ document.addEventListener('click', ev => {
   if (act === 'payBuyIn') payBuyIn();
   if (['quick', 'createRoom', 'joinRoom', 'startRoom', 'leaveLobby', 'backToLobby'].includes(act)) lobbyAction(act);
   if (act === 'backToIntro') { ui.overlay = 'intro'; render(); }
+  if (act === 'titlePlay') { ui.title = false; ui.overlay = 'intro'; fx.sound('deal'); render(); }
+  if (act === 'toTitle') { ui.title = true; ui.overlay = null; render(); }
+  if (act === 'settings' || act === 'ranking') { ui.overlay = act; render(); }
+  if (act === 'closeSheet') { ui.overlay = ui.title ? null : 'intro'; render(); }
+  if (act === 'setLang') { setLang(ev.target.closest('[data-lang]').dataset.lang); render(); }
+  if (act === 'setSound') { fx.setMuted(ev.target.closest('[data-on]').dataset.on !== '1'); if (!fx.isMuted()) fx.sound('coin'); render(); }
+  if (act === 'wallet') {
+    if (PREVIEW) { ui.title = false; ui.overlay = 'intro'; render(); }
+    else { ui.title = false; startChainGame(); }
+  }
   if (act === 'rules') { ui.overlayBefore = ui.overlay; ui.overlay = 'rules'; render(); }
   if (act === 'lang') { setLang(getLang() === 'ja' ? 'en' : 'ja'); render(); }
   if (act === 'pick') {

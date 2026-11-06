@@ -21,7 +21,7 @@ Four players draw and discard like in mahjong, but the winning hand is a poker h
 
 ### 1. Practice in one minute (no wallet)
 
-1. Open https://ponkotsuai.github.io/ron-poker/ and press **Practice (no wallet)**.
+1. Open https://ponkotsuai.github.io/ron-poker/ and press **PLAY** on the title screen. Pick a character, then press **Practice (no wallet)**.
    → A "Hand 1" banner plays, four cards are dealt to you, and the centre panel shows each seat's points.
 2. When the gold light in the centre panel points at you, you have drawn a fifth card. Click a card, then **Discard** (or double-click it).
    → The card drops into your discard row. A card marked **R** means you would be one card from winning without it.
@@ -32,13 +32,13 @@ Four players draw and discard like in mahjong, but the winning hand is a poker h
 5. Watch the opponents' speech bubbles.
    → They explain their decisions, for example "Riichi on the table. The joker is my safe throw."
 
-The language switch (English / 日本語) is at the top right of the menu and the table.
+The language switch (English / 日本語) is under **Settings** on the title screen, and at the top right of the menu and the table.
 
 ### 2. Play for testnet NEAR
 
 You need [Meteor Wallet](https://wallet.meteorwallet.app/) on **testnet** with at least about 3.1 NEAR.
 
-1. Open the game, optionally type a nickname, and press **Play on NEAR testnet**. Approve the sign-in in Meteor.
+1. Open the game, press **PLAY**, pick a character, optionally type a nickname, and press **Play on NEAR testnet**. Approve the sign-in in Meteor.
    → The lobby shows your account and your table bankroll inside the contract.
    → The referee runs on a free server: the first visit after a quiet period can take up to a minute to wake it.
 2. Press **Random match**. If nobody else joins within 15 seconds, the three AI players take the empty seats.
@@ -75,7 +75,7 @@ npm run referee:offline   # referee on http://localhost:8787 with an in-memory c
 npm run serve             # in a second terminal: the game on http://localhost:8765
 ```
 
-Open http://localhost:8765/?referee=http://localhost:8787&testAccount=judge.testnet and press **Play on NEAR testnet**, then **Random match** and **Pay 3 NEAR buy-in**.
+Open http://localhost:8765/?referee=http://localhost:8787&testAccount=judge.testnet, press **PLAY**, then **Play on NEAR testnet**, **Random match** and **Pay 3 NEAR buy-in**.
 → The same on-chain flow runs against a simulated contract, without wallet pop-ups. Open a second tab with `testAccount=friend.testnet` to try rooms with two players.
 
 ### 5. Run the tests
