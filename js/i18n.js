@@ -26,13 +26,6 @@ export const STRINGS = {
     canRon: '{name} threw {card}. Ron for {hand}, {points} pts?',
     waitingFor: '{name} is thinking…',
     moods: { survival: 'Defensive', steady: 'Steady', comfortable: 'Pushing' },
-    styles: { tanuki: 'Gambler', tsuru: 'Accountant', kitsune: 'Shapeshifter' },
-    bios: {
-      tanuki: 'Chases big hands and hugs the joker for double points.',
-      tsuru: 'Counts every point. Folds early when someone calls riichi.',
-      kitsune: 'Changes style with its bankroll: bold when rich, stubborn when poor.',
-    },
-    names: { tanuki: 'Tanuki', tsuru: 'Tsuru', kitsune: 'Kitsune' },
     hands: {
       trips: 'Three of a Kind', straight: 'Straight', flush: 'Flush', fullHouse: 'Full House',
       quads: 'Four of a Kind', straightFlush: 'Straight Flush', royal: 'Royal Flush',
@@ -66,6 +59,7 @@ export const STRINGS = {
     playAgain: 'Play again',
     pts: 'pts',
     seed: 'Shuffle seed',
+    pickCharacter: 'Choose your character',
     nickname: 'Nickname',
     nicknamePlaceholder: 'Shown to other players',
     humanPlayer: 'A human player.',
@@ -173,13 +167,6 @@ export const STRINGS = {
     canRon: '{name}が{card}を捨てました。{hand}（{points}点）でロンしますか？',
     waitingFor: '{name}が考え中…',
     moods: { survival: '守り', steady: '通常', comfortable: '攻め' },
-    styles: { tanuki: 'ギャンブラー', tsuru: '堅実派', kitsune: '変幻自在' },
-    bios: {
-      tanuki: '高い役を狙い、ジョーカーを抱えて2倍を狙う。',
-      tsuru: '1点も無駄にしない。リーチが入るとすぐ守りに回る。',
-      kitsune: '懐具合で打ち方が変わる。余裕があれば大胆、苦しければ粘り強い。',
-    },
-    names: { tanuki: 'タヌキ', tsuru: 'ツル', kitsune: 'キツネ' },
     hands: {
       trips: 'スリーカード', straight: 'ストレート', flush: 'フラッシュ', fullHouse: 'フルハウス',
       quads: 'フォーカード', straightFlush: 'ストレートフラッシュ', royal: 'ロイヤルストレートフラッシュ',
@@ -213,6 +200,7 @@ export const STRINGS = {
     playAgain: 'もう一度遊ぶ',
     pts: '点',
     seed: 'シャッフルのシード',
+    pickCharacter: 'キャラクターを選ぶ',
     nickname: 'ニックネーム',
     nicknamePlaceholder: '対戦相手に表示されます',
     humanPlayer: '人間のプレイヤーです。',

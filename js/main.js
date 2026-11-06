@@ -6,6 +6,7 @@ import { isTenpai, BASE_POINTS, CAT_KEYS, START_POINTS } from './engine.js';
 import { t, getLang, setLang } from './i18n.js';
 import * as chain from './chain.js';
 import * as fx from './fx.js';
+import { CHARACTERS, CHARACTER_IDS, characterOf, portraitUrl } from './characters.js';
 
 const NEAR_PER_POINT = 0.1;
 // Set at build time. The chat preview cannot reach NEAR, so it offers practice mode only.
@@ -14,9 +15,7 @@ const LIVE_URL = 'https://ponkotsuai.github.io/ron-poker/';
 const HUMAN = 0;
 // Turn order is 0 → 1 → 2 → 3. Seat 1 sits to your right, 2 across, 3 to your left.
 // Seats are always shown from your point of view: you are seat 0.
-const AI_IDS = ['tanuki', 'tsuru', 'kitsune'];
-const PRACTICE_SEATS = [{ kind: 'human' }, ...AI_IDS.map(id => ({ kind: 'ai', id }))];
-const GLYPH = { tanuki: '狸', tsuru: '鶴', kitsune: '狐' };
+const EXPR_MS = 4500;
 
 const $ = sel => document.querySelector(sel);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -35,7 +34,8 @@ const ui = {
   thinking: null,
   overlay: 'intro', // intro | result | final | rules | chain | null
   once: {}, // one-shot animations: { key: { v, at } }, honoured for a moment after they are set
-  seats: PRACTICE_SEATS,
+  seats: null, // set below once your character is known
+  expr: {}, // seat → { e: 'joy'|'angry'|'sad'|'fun', until } short reactions on the avatars
   overlayBefore: null,
   result: null,
   resolveOverlay: null,
@@ -51,6 +51,62 @@ function saveNick(n) {
 }
 ui.nick = loadNick();
 
+// ---- characters ----
+
+function loadChar() {
+  try { const c = localStorage.getItem('ronpoker.char'); return CHARACTERS[c] ? c : 'nia'; } catch { return 'nia'; }
+}
+function saveChar(c) {
+  try { localStorage.setItem('ronpoker.char', c); } catch { /* ignore */ }
+}
+ui.char = loadChar();
+
+// Practice: you plus three computer players drawn from the rest of the cast.
+function practiceSeats() {
+  const rest = CHARACTER_IDS.filter(id => id !== ui.char);
+  for (let i = rest.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [rest[i], rest[j]] = [rest[j], rest[i]];
+  }
+  return [{ kind: 'human', character: ui.char }, ...rest.slice(0, 3).map(id => ({ kind: 'ai', id }))];
+}
+ui.practice = practiceSeats();
+ui.seats = ui.practice;
+
+const lang = () => (getLang() === 'ja' ? 'ja' : 'en');
+const charName = id => CHARACTERS[characterOf(id)].name[lang()];
+const charStyle = id => CHARACTERS[characterOf(id)].style[lang()];
+const charBio = id => CHARACTERS[characterOf(id)].bio[lang()];
+
+function seatInfo(seat) {
+  return ui.seats[seat] || ui.practice[seat];
+}
+
+function seatChar(seat) {
+  if (seat === HUMAN) return ui.char;
+  const s = seatInfo(seat);
+  return characterOf(s.character || s.id);
+}
+
+// A short reaction (win, deal-in, riichi); otherwise the face follows the score.
+function setExpr(seat, e, ms = EXPR_MS) {
+  ui.expr[seat] = { e, until: Date.now() + ms };
+  setTimeout(() => { if (!ui.overlay || ui.overlay === 'result') render(); }, ms + 30);
+}
+
+function seatExpr(seat) {
+  const x = ui.expr[seat];
+  if (x && x.until > Date.now()) return x.e;
+  const g = ui.game;
+  if (!g) return 'main';
+  const mood = moodOf(g.points[seat], START_POINTS);
+  return mood === 'survival' ? 'sad' : mood === 'comfortable' ? 'fun' : 'main';
+}
+
+function avatar(seat, cls = '') {
+  return `<img class="face ${cls}" src="${portraitUrl(seatChar(seat), seatExpr(seat))}" alt="" draggable="false">`;
+}
+
 function setOnce(key, v) { ui.once[key] = { v, at: Date.now() }; }
 function once(key) {
   const o = ui.once[key];
@@ -59,15 +115,9 @@ function once(key) {
 
 function seatName(seat) {
   if (seat === HUMAN) return ui.nick ? escapeHtml(ui.nick) : t('you');
-  const s = ui.seats[seat] || PRACTICE_SEATS[seat];
-  if (s.kind === 'ai') return t(`names.${s.id}`);
+  const s = seatInfo(seat);
+  if (s.kind === 'ai') return charName(s.character || s.id);
   return escapeHtml(s.name || '?');
-}
-
-function seatGlyph(seat) {
-  const s = ui.seats[seat] || PRACTICE_SEATS[seat];
-  if (s.kind === 'ai') return GLYPH[s.id];
-  return escapeHtml((s.name || '?').slice(0, 1).toUpperCase());
 }
 
 function cardLabel(c) {
@@ -149,7 +199,7 @@ class PacedAI {
 function newGame(seed = (Math.random() * 2 ** 32) >>> 0) {
   const seats = [0, 1, 2, 3].map(seat => {
     if (seat === HUMAN) return { name: 'you', controller: new HumanController() };
-    const id = AI_IDS[seat - 1];
+    const id = ui.seats[seat].id;
     const ai = new AIController({
       personality: PERSONALITIES[id],
       startPoints: START_POINTS,
@@ -160,6 +210,7 @@ function newGame(seed = (Math.random() * 2 ** 32) >>> 0) {
   ui.log = [];
   ui.bubbles = {};
   ui.moods = {};
+  ui.expr = {};
   ui.lastDiscard = null;
   ui.game = new Game({ seats, seed, onEvent, afterHand: showResult });
   return ui.game;
@@ -192,8 +243,9 @@ function onEvent(type, e) {
     fx.sound('tile');
     if (e.riichi) {
       setOnce('stick', e.seat);
+      setExpr(e.seat, 'fun');
       fx.sound('riichi');
-      fx.cutIn('riichi', { title: 'リーチ', kanji: '立直', who: seatName(e.seat) });
+      fx.cutIn('riichi', { title: 'リーチ', kanji: '立直', who: seatName(e.seat), portrait: portraitImg(e.seat, 'fun') });
     }
     const key = e.riichi ? 'logRiichi' : 'logDiscard';
     pushLog(t(key, { name: seatName(e.seat), card: cardLabel(e.card) }), e.riichi ? 'riichi' : '');
@@ -203,7 +255,11 @@ function onEvent(type, e) {
     const big = e.ev.cat >= 8;
     const total = e.ev.points * (e.type === 'ron' ? 3 : 1);
     fx.sound(big ? 'yakuman' : e.type);
+    setExpr(e.winner, 'joy', 7000);
+    if (e.type === 'ron') setExpr(e.loser, 'angry', 7000);
+    else for (const x of e.transfers || []) if (x.from !== e.winner) setExpr(x.from, 'sad', 7000);
     fx.cutIn(big ? 'yakuman' : e.type, {
+      portrait: portraitImg(e.winner, 'joy'),
       title: big ? '役満' : e.type === 'ron' ? 'ロン' : 'ツモ',
       kanji: big ? t(`hands.${e.ev.key}`) : e.type === 'ron' ? '栄和' : '自摸',
       who: seatName(e.winner),
@@ -222,6 +278,10 @@ function onEvent(type, e) {
   }
   if (type === 'gameEnd') fx.sound('gameEnd');
   render();
+}
+
+function portraitImg(seat, e) {
+  return `<img src="${portraitUrl(seatChar(seat), e)}" alt="">`;
 }
 
 function seatEl(seat) {
@@ -243,7 +303,8 @@ async function showResult(record) {
 
 async function startGame() {
   ui.chain = null;
-  ui.seats = PRACTICE_SEATS;
+  ui.practice = practiceSeats();
+  ui.seats = ui.practice;
   const g = newGame();
   ui.overlay = null;
   render();
@@ -259,8 +320,8 @@ function chainStep(key, data = {}) {
   const c = ui.chain;
   if (!c) return;
   const params = { ...data };
-  if (params.who) params.who = t(`names.${params.who}`);
-  if (params.by) params.by = t(`names.${params.by}`);
+  if (params.who) params.who = charName(params.who);
+  if (params.by) params.by = charName(params.by);
   if (params.name) params.name = escapeHtml(params.name);
   c.steps.push({ key, params, hash: data.hash || null });
   pushLog(t(key, params), 'chain');
@@ -450,7 +511,7 @@ async function startChainGame() {
     const conn = listen(ui.chain);
     ui.chain.conn = conn;
     await conn.ready;
-    conn.send({ t: 'hello', account: human, nickname: ui.nick });
+    conn.send({ t: 'hello', account: human, nickname: ui.nick, character: ui.char });
   } catch (e) { chainFail(e); }
 }
 
@@ -474,7 +535,7 @@ function lobbyAction(act) {
     c.steps = c.steps.slice(0, 3);
     c.tableId = null;
     c.settled = null;
-    ui.seats = PRACTICE_SEATS;
+    ui.seats = ui.practice;
     ui.overlay = 'chain';
   }
   render();
@@ -651,7 +712,7 @@ function riichiStick(on, seat) {
 }
 
 function speech(seat) {
-  const info = ui.seats[seat] || PRACTICE_SEATS[seat];
+  const info = seatInfo(seat);
   if (info.kind !== 'ai') return '';
   if (ui.thinking === seat) return `<p class="speech thinking"><span class="dots"><i></i><i></i><i></i></span></p>`;
   const b = ui.bubbles[seat];
@@ -663,7 +724,7 @@ function speech(seat) {
 
 function nameplate(seat) {
   const g = ui.game;
-  const info = ui.seats[seat] || PRACTICE_SEATS[seat];
+  const info = seatInfo(seat);
   const isAI = info.kind === 'ai';
   const p = g ? g.players[seat] : { riichi: false };
   const pts = g ? g.points[seat] : START_POINTS;
@@ -672,11 +733,11 @@ function nameplate(seat) {
   const dealer = g && g.dealer === seat;
   const wallet = isAI && ui.chain && ui.chain.bankrolls[info.id] != null
     ? `<span class="wallet" title="${ui.chain.agents?.[info.id] || ''}">${t('bankroll')} ${chain.yoctoToNear(ui.chain.bankrolls[info.id], 1)} NEAR</span>` : '';
-  const sub = seat === HUMAN ? '' : isAI ? t(`styles.${info.id}`) : t('humanTag');
+  const sub = seat === HUMAN ? charName(ui.char) : isAI ? charStyle(info.character || info.id) : info.character ? charName(info.character) : t('humanTag');
   const { left, top } = PLATE[seat];
   return `
     <section class="np s${seat} ${active ? 'active' : ''} ${p.riichi ? 'in-riichi' : ''}" id="np-${seat}" style="left:${left}px;top:${top}px" aria-label="${seatName(seat)}">
-      <span class="avatar ${isAI ? '' : 'human'}">${seat === HUMAN ? escapeHtml((ui.nick || t('you')).slice(0, 1).toUpperCase()) : seatGlyph(seat)}</span>
+      <span class="avatar ${isAI ? '' : 'human'}">${avatar(seat)}</span>
       <div class="np-body">
         <p class="np-name"><span class="nm">${seatName(seat)}</span>${dealer ? `<span class="dealer">${t('dealer')}</span>` : ''}</p>
         ${sub ? `<p class="np-sub">${sub}${isAI && mood !== 'steady' ? ` <span class="mood ${mood}">${t(`moods.${mood}`)}</span>` : ''}</p>` : ''}
@@ -809,12 +870,14 @@ function introOverlay() {
       <p class="eyebrow">NEAR HACKATHON · testnet</p>
       <h1 class="logo">RON<span>POKER</span></h1>
       <p class="tagline">${t('tagline')}</p>
-      <ul class="rivals">
-        ${[1, 2, 3].map(seat => {
-          const id = AI_IDS[seat - 1];
-          return `<li><span class="glyph">${GLYPH[id]}</span><span><b>${t(`names.${id}`)}</b> <em>${t(`styles.${id}`)}</em><br>${t(`bios.${id}`)}</span></li>`;
-        }).join('')}
-      </ul>
+      <p class="label">${t('pickCharacter')}</p>
+      <div class="picker" role="radiogroup" aria-label="${t('pickCharacter')}">
+        ${CHARACTER_IDS.map(id => `<button type="button" class="pick ${id === ui.char ? 'on' : ''}" data-act="pick" data-char="${id}" role="radio" aria-checked="${id === ui.char}" title="${charName(id)}"><img src="${portraitUrl(id)}" alt="${charName(id)}" draggable="false"></button>`).join('')}
+      </div>
+      <div class="picked">
+        <img src="${portraitUrl(ui.char, 'joy')}" alt="" draggable="false">
+        <p><b>${charName(ui.char)}</b> <em>${charStyle(ui.char)}</em><br>${charBio(ui.char)}</p>
+      </div>
       <div class="nick-row">
         <label for="nick" class="label">${t('nickname')}</label>
         <input id="nick" class="nick-input" maxlength="12" autocomplete="nickname" placeholder="${t('nicknamePlaceholder')}" value="${escapeHtml(ui.nick)}">
@@ -871,7 +934,7 @@ function standings(points, mode, deltas = null) {
     .map(({ seat, pts }, i) => {
       const diff = final ? pts - START_POINTS : deltas[seat];
       const near = (pts * NEAR_PER_POINT).toFixed(1);
-      return `<li class="${seat === HUMAN ? 'me' : ''}"><span class="place">${i + 1}</span><span class="nm">${seatName(seat)}</span>
+      return `<li class="${seat === HUMAN ? 'me' : ''}"><span class="place">${i + 1}</span><span class="nm">${avatar(seat, 'mini')}${seatName(seat)}</span>
         <span class="num">${pts}${t('pts')}</span><span class="num diff ${diff > 0 ? 'up' : diff < 0 ? 'down' : ''}">${diff === 0 ? '±0' : signed(diff)}</span>
         ${final ? `<span class="num near">${near} NEAR</span>` : ''}</li>`;
     }).join('');
@@ -949,6 +1012,14 @@ document.addEventListener('click', ev => {
   if (act === 'backToIntro') { ui.overlay = 'intro'; render(); }
   if (act === 'rules') { ui.overlayBefore = ui.overlay; ui.overlay = 'rules'; render(); }
   if (act === 'lang') { setLang(getLang() === 'ja' ? 'en' : 'ja'); render(); }
+  if (act === 'pick') {
+    ui.char = ev.target.closest('[data-char]').dataset.char;
+    saveChar(ui.char);
+    ui.practice = practiceSeats();
+    if (!ui.game) ui.seats = ui.practice;
+    fx.sound('turn');
+    render();
+  }
   if (act === 'closeRules') { ui.overlay = ui.overlayBefore; ui.overlayBefore = null; render(); }
   if (act === 'next') { ui.overlay = null; const r = ui.resolveOverlay; ui.resolveOverlay = null; render(); r?.(); }
   if (act === 'discard' && ui.selected != null) resolvePending({ index: ui.selected, riichi: false });

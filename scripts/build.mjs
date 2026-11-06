@@ -2,7 +2,7 @@
 //  - assets/app.js: the game bundle served by GitHub Pages (index.html loads it)
 //  - dist/preview.html: one self-contained page for a Claude artifact preview (practice mode only)
 import { build } from 'esbuild';
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, cpSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 
 const common = {
@@ -23,6 +23,8 @@ const fonts = html.match(/<link rel="stylesheet" href="https:\/\/fonts[^>]+>/)[0
 const css = readFileSync('css/style.css', 'utf8');
 const js = await build({ ...common, format: 'iife', write: false, define: { ...common.define, __PREVIEW__: 'true' } });
 mkdirSync('dist', { recursive: true });
+// The preview loads the character art from next to itself.
+cpSync('assets/chars', 'dist/assets/chars', { recursive: true });
 writeFileSync('dist/preview.html', `<title>Ron Poker</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 ${fonts}

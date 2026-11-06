@@ -43,7 +43,7 @@ You need [Meteor Wallet](https://wallet.meteorwallet.app/) on **testnet** with a
    → The referee runs on a free server: the first visit after a quiet period can take up to a minute to wake it.
 2. Press **Random match**. If nobody else joins within 15 seconds, the three AI players take the empty seats.
    → "The referee opened table #N on chain and committed the shuffle seed", with a `tx ↗` link to the explorer.
-   → One line per AI: "Tanuki paid the 3 NEAR buy-in from its own bankroll."
+   → One line per AI: "Don Whale paid the 3 NEAR buy-in from its own bankroll."
 3. Press **Pay 3 NEAR buy-in** and approve in Meteor.
    → Once all four buy-ins are in, the cards are dealt.
 4. Play the 8 hands (or until someone reaches 0 points).
@@ -145,17 +145,26 @@ sequenceDiagram
 | Straight Flush | 20 |
 | Royal Flush | 50 |
 
-## The AI players
+## The characters
 
-Three rule-based players (not an LLM). Each one looks two draws ahead over the cards it has not seen yet, estimates how dangerous each discard is against riichi players, and weighs speed against hand value.
+Pick one of ten characters on the start screen; the computer players are drawn from the other nine. Each has a portrait and four expressions that react to the game: a laugh when they win, anger when they deal into a ron, tears when they pay or fall behind, a smirk when they lead or declare riichi.
 
-| Player | Style |
-|---|---|
-| Tanuki | Gambler: chases big hands and holds the joker for double points |
-| Tsuru | Accountant: counts every point, folds early when someone calls riichi |
-| Kitsune | Shapeshifter: reacts twice as hard to its stack, bold when ahead, stubborn when behind |
+The computer players are rule-based (not an LLM). Each looks two draws ahead over the cards it has not seen yet, estimates how dangerous each discard is against riichi players, and weighs speed against hand value. The character sets how it leans:
 
-All three shift mood with the points (= NEAR) they have left at the table, and say why they did what they did in speech bubbles.
+| Character | Style | How it plays |
+|---|---|---|
+| King Bit | Old money | patient, defends a lead |
+| Don Whale | High roller | chases big hands, holds the joker for the double |
+| Hodl Gorilla | Diamond hands | never folds, keeps every joker |
+| Shiba | Speedster | takes any win, fast |
+| Etha | Calculator | never throws a dangerous card |
+| Nia | All-rounder | balanced, NEAR's poster girl |
+| Kero | Bluffer | greedy, pushes on |
+| Bull | Bullish | pushes even into a riichi |
+| Bear | Bearish | folds at the first sign of danger |
+| Kitsune | Shapeshifter | reacts twice as hard to its score |
+
+All of them shift mood with the points (= NEAR) they have left at the table, and say why they did what they did in speech bubbles. On testnet the referee's three AI wallets each play as a character nobody at the table picked.
 
 ## Repository
 

@@ -1,13 +1,14 @@
 // AI players. Each AI plays with its own bankroll in mind:
 // its personality sets a baseline, and its current points shift it into a mood.
 
+import { CHARACTERS, CHARACTER_IDS, AI_SKIN } from './characters.js';
 import { makeDeck, evaluate, waitingCards, discardedRanks, CAT_KEYS } from './engine.js';
 
-export const PERSONALITIES = {
-  tanuki: { id: 'tanuki', greed: 1.5, risk: 0.45, keepJoker: 0.85 },
-  tsuru: { id: 'tsuru', greed: 0.8, risk: 1.6, keepJoker: 0.3 },
-  kitsune: { id: 'kitsune', greed: 1.0, risk: 1.0, keepJoker: 0.6, adaptive: true },
-};
+// One playing style per character, plus the referee's AI accounts under their old names.
+export const PERSONALITIES = Object.fromEntries([
+  ...CHARACTER_IDS.map(id => [id, { id, ...CHARACTERS[id].play }]),
+  ...Object.entries(AI_SKIN).map(([acc, id]) => [acc, { id, ...CHARACTERS[id].play }]),
+]);
 
 export function moodOf(points, start) {
   if (points <= start * 0.4) return 'survival';

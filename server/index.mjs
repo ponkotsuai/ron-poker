@@ -12,6 +12,7 @@ import { randomBytes } from 'node:crypto';
 import { WebSocketServer } from 'ws';
 import { Game } from '../js/game.js';
 import { AIController, PERSONALITIES } from '../js/ai.js';
+import { CHARACTERS, CHARACTER_IDS } from '../js/characters.js';
 import { START_POINTS } from '../js/engine.js';
 // OFFLINE=1 swaps in an in-memory chain for local tests.
 const near = await import(process.env.OFFLINE ? './near-offline.mjs' : './near.mjs');
@@ -115,6 +116,7 @@ class Player {
     this.ws = ws;
     this.account = null;
     this.nickname = null;
+    this.character = null;
     this.table = null;
     this.room = null;
     this.seat = null;
@@ -245,6 +247,9 @@ class Table {
   constructor(humans) {
     this.humans = humans; // seats 0..n-1
     this.aiIds = AI_IDS.slice(0, 4 - humans.length); // seats n..3
+    // Each AI account plays as a character nobody at the table has picked, in that character's style.
+    const free = CHARACTER_IDS.filter(c => !humans.some(p => p.character === c)).sort(() => Math.random() - 0.5);
+    this.aiChars = Object.fromEntries(this.aiIds.map((id, i) => [id, free[i]]));
     this.id = null;
     this.seed = null;
     this.game = null;
@@ -256,8 +261,8 @@ class Table {
 
   seatInfo() {
     return [
-      ...this.humans.map(p => ({ kind: 'human', name: p.name, account: p.account })),
-      ...this.aiIds.map(id => ({ kind: 'ai', id, account: agents[id].accountId })),
+      ...this.humans.map(p => ({ kind: 'human', name: p.name, account: p.account, character: p.character })),
+      ...this.aiIds.map(id => ({ kind: 'ai', id, character: this.aiChars[id], account: agents[id].accountId })),
     ];
   }
 
@@ -304,7 +309,7 @@ class Table {
     for (const id of this.aiIds) {
       const a = agents[id];
       const r = await call(signerAccount(a.accountId, a.play.secretKey), CONTRACT_ID, 'join', { table_id: this.id });
-      this.step('chainAiJoined', { who: id, hash: r.hash });
+      this.step('chainAiJoined', { who: this.aiChars[id], hash: r.hash });
     }
     this.step('chainGameOn', { id: this.id });
     this.play().catch(e => this.fail(e));
@@ -393,7 +398,7 @@ class Table {
     this.aiIds.forEach((id, i) => {
       const seat = this.humans.length + i;
       const ai = new AIController({
-        personality: PERSONALITIES[id], startPoints: START_POINTS,
+        personality: PERSONALITIES[this.aiChars[id]], startPoints: START_POINTS,
         think: (key, params) => this.broadcast({ t: 'think', seat, key, params }),
       });
       const paced = (kind, fn) => async (...args) => {
@@ -499,6 +504,7 @@ wss.on('connection', (ws, req) => {
         if (typeof msg.account !== 'string' || !/^[a-z0-9._-]{2,64}$/.test(msg.account)) throw new Error('bad account');
         player.account = msg.account;
         player.nickname = cleanNickname(msg.nickname);
+        player.character = Object.hasOwn(CHARACTERS, msg.character) ? msg.character : null;
         player.send({ t: 'hello', referee: referee.accountId, contract: CONTRACT_ID, agents: Object.fromEntries(Object.values(agents).map(a => [a.id, a.accountId])) });
       } else if (msg.t === 'resume') {
         const t = tables.get(msg.tableId);
