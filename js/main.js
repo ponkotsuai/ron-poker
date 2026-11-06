@@ -805,6 +805,7 @@ function scoreTable() {
 function introOverlay() {
   return `
     <div class="sheet intro">
+      <button type="button" class="act ghost lang-switch" data-act="lang" lang="${getLang() === 'ja' ? 'en' : 'ja'}">${t('lang')}</button>
       <p class="eyebrow">NEAR HACKATHON · testnet</p>
       <h1 class="logo">RON<span>POKER</span></h1>
       <p class="tagline">${t('tagline')}</p>
@@ -947,6 +948,7 @@ document.addEventListener('click', ev => {
   if (['quick', 'createRoom', 'joinRoom', 'startRoom', 'leaveLobby', 'backToLobby'].includes(act)) lobbyAction(act);
   if (act === 'backToIntro') { ui.overlay = 'intro'; render(); }
   if (act === 'rules') { ui.overlayBefore = ui.overlay; ui.overlay = 'rules'; render(); }
+  if (act === 'lang') { setLang(getLang() === 'ja' ? 'en' : 'ja'); render(); }
   if (act === 'closeRules') { ui.overlay = ui.overlayBefore; ui.overlayBefore = null; render(); }
   if (act === 'next') { ui.overlay = null; const r = ui.resolveOverlay; ui.resolveOverlay = null; render(); r?.(); }
   if (act === 'discard' && ui.selected != null) resolvePending({ index: ui.selected, riichi: false });

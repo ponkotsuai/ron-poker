@@ -337,6 +337,8 @@ button.tile.selected { transform: translateY(-12px); box-shadow: 0 calc(var(--w)
 .sheet .row { display: flex; gap: 10px; flex-wrap: wrap; }
 .eyebrow { font-size: 0.72rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--gold); }
 .intro .logo { font-size: clamp(2.4rem, 11vw, 3.6rem); line-height: 1; }
+.intro { position: relative; }
+.lang-switch { border-color: var(--muted) !important; position: absolute; top: 14px; right: 14px; min-height: 36px; padding: 0 14px; border-radius: 999px; font-size: 0.85rem; }
 .tagline { font-size: 1.05rem; }
 .note { color: var(--muted); font-size: 0.85rem; }
 .note code { font-family: var(--font-num); color: var(--text); }
@@ -402,9 +404,9 @@ button.tile.selected { transform: translateY(-12px); box-shadow: 0 calc(var(--w)
 
 .cutin { position: absolute; inset: 0; display: grid; place-items: center; animation: cut-fade 0.18s ease-out both; }
 .cutin.out { animation: cut-out 0.28s ease-in both; }
-.cutin .rays { position: absolute; width: 160vmax; height: 160vmax; fill: rgba(224, 176, 74, 0.13); animation: spin 6s linear infinite; }
+.cutin .rays { position: absolute; left: 50%; top: 50%; translate: -50% -50%; width: 160vmax; height: 160vmax; fill: rgba(224, 176, 74, 0.13); animation: spin 6s linear infinite; }
 .cutin .band {
-  position: relative; width: 120vw; min-height: clamp(150px, 30vh, 260px);
+  position: absolute; left: -10vw; top: 50%; translate: 0 -50%; width: 120vw; min-height: clamp(150px, 30vh, 260px);
   display: flex; align-items: center; justify-content: center; gap: clamp(8px, 3vw, 40px);
   transform: skewY(-6deg);
   animation: band-in 0.32s cubic-bezier(.2,.9,.3,1.2) both;
