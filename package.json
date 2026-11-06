@@ -7,7 +7,9 @@
     "test": "node --test tests/engine.test.mjs && node --test tests/server.test.mjs && node --test tests/server-leave.test.mjs && node --test tests/server-room.test.mjs",
     "simulate": "node scripts/simulate.mjs",
     "build": "node scripts/build.mjs",
-    "start": "node server/index.mjs"
+    "start": "node server/index.mjs",
+    "serve": "node scripts/serve.mjs",
+    "referee:offline": "node scripts/offline-referee.mjs"
   },
   "devDependencies": {
     "esbuild": "^0.24.0"
