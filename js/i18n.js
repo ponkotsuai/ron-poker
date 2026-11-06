@@ -68,7 +68,17 @@ export const STRINGS = {
     language: 'Language',
     sound: 'Sound',
     close: 'Close',
-    rankingSoon: 'The ranking is coming soon.',
+    rankingIntro: 'Total NEAR won or lost on testnet tables, read from the contract. Practice games do not count.',
+    rankingLoading: 'Reading the tables from the contract…',
+    rankingPreview: 'The ranking needs the live game:',
+    rankingError: 'Could not reach the referee service. Try again in a minute.',
+    rankingEmpty: 'No table has been settled yet.',
+    rankingNote: 'From {tables} tables on chain. Players without a nickname show their account.',
+    rankPlayer: 'Player',
+    rankNet: 'Net',
+    rankGames: 'Games',
+    rankFirsts: '1st',
+    rankAvg: 'Avg place',
     nickname: 'Nickname',
     nicknamePlaceholder: 'Shown to other players',
     humanPlayer: 'A human player.',
@@ -218,7 +228,17 @@ export const STRINGS = {
     language: '言語',
     sound: 'サウンド',
     close: '閉じる',
-    rankingSoon: 'ランキングは準備中です。',
+    rankingIntro: 'テストネットの卓で増減したNEARの合計。コントラクトの記録から集計しています。練習モードは含みません。',
+    rankingLoading: 'コントラクトから卓の記録を読み込んでいます…',
+    rankingPreview: 'ランキングは公開版で見られます：',
+    rankingError: '審判サービスにつながりませんでした。少し待ってからもう一度開いてください。',
+    rankingEmpty: 'まだ精算された卓がありません。',
+    rankingNote: 'チェーン上の{tables}卓から集計。ニックネームがない人はアカウントを表示しています。',
+    rankPlayer: 'プレイヤー',
+    rankNet: '収支',
+    rankGames: '対戦数',
+    rankFirsts: '1位',
+    rankAvg: '平均順位',
     nickname: 'ニックネーム',
     nicknamePlaceholder: '対戦相手に表示されます',
     humanPlayer: '人間のプレイヤーです。',
@@ -303,11 +323,10 @@ export const STRINGS = {
   },
 };
 
-let lang = 'ja';
+let lang = 'en'; // English by default; 日本語 is one tap away
 try {
   const saved = localStorage.getItem('ronpoker.lang');
   if (saved === 'en' || saved === 'ja') lang = saved;
-  else if (!/^ja/i.test(navigator.language || '')) lang = 'en';
 } catch { /* storage unavailable */ }
 
 export function getLang() { return lang; }

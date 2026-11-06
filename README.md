@@ -52,6 +52,11 @@ You need [Meteor Wallet](https://wallet.meteorwallet.app/) on **testnet** with a
    → With 3 NEAR or more in the bankroll, the pay button becomes **Join with 3 NEAR from your bankroll**: no new NEAR is sent.
 6. Or press **Cash out to wallet** on the final sheet to move the whole bankroll back to your wallet.
 
+### Ranking
+
+Press **Ranking** on the title screen.
+→ Every wallet that has played a settled testnet table, ranked by total NEAR won or lost, with games, first places and average place. The referee builds it by reading every table from the contract (`get_table`), so it matches the chain. AI wallets are tagged **AI**. Players show their nickname, or their account shortened to the first and last five characters.
+
 ### 3. Play with a friend
 
 1. In the lobby, press **Create a room**.

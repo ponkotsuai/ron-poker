@@ -522,11 +522,6 @@ button.tile.selected { transform: translateY(-12px); box-shadow: 0 calc(var(--w)
 .hot:active { transform: translateY(1px) scale(0.99); }
 .hot.play { border-radius: 4cqw; animation: play-glow 1.6s ease-in-out infinite; }
 @keyframes play-glow { 0%, 100% { box-shadow: 0 0 0 rgba(200, 120, 255, 0); } 50% { box-shadow: 0 0 3cqw rgba(200, 120, 255, 0.55); } }
-.t-label {
-  position: absolute; top: 18%; bottom: 18%; display: grid; place-items: center;
-  border-radius: 1cqw; background: linear-gradient(180deg, #221d1a, #050404);
-  color: #fff; font-family: var(--font-body); font-weight: 700; font-size: 2cqw; letter-spacing: 0.02em; white-space: nowrap;
-}
 .title-foot {
   position: absolute; left: 0; right: 0; bottom: max(8px, env(safe-area-inset-bottom, 0px)); margin: 0; text-align: center;
   font-size: 12px; letter-spacing: 0.2em; color: rgba(255, 255, 255, 0.55); pointer-events: none;
@@ -537,3 +532,24 @@ button.tile.selected { transform: translateY(-12px); box-shadow: 0 calc(var(--w)
 .settings .set-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
 .seg { display: inline-flex; gap: 6px; }
 .seg .act { min-width: 84px; }
+
+/* ---- ranking ------------------------------------------------------------ */
+.sheet.ranking { width: min(720px, 100%); }
+.rank-wrap { max-height: min(56vh, 520px); overflow: auto; border-radius: 10px; border: 1px solid var(--felt-line); }
+.rank { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+.rank th { position: sticky; top: 0; background: var(--rail); text-align: left; font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); padding: 8px 10px; font-weight: 500; }
+.rank td { padding: 7px 10px; border-top: 1px solid rgba(255, 255, 255, 0.05); white-space: nowrap; }
+.rank .num { text-align: right; font-family: var(--font-num); font-variant-numeric: tabular-nums; }
+.rank .pos { font-family: var(--font-num); color: var(--muted); width: 2.5em; }
+.rank .top .pos { font-weight: 700; }
+.rank .top1 .pos { color: #f3cd72; }
+.rank .top2 .pos { color: #d7dde2; }
+.rank .top3 .pos { color: #d4925a; }
+.rank .who { max-width: 220px; overflow: hidden; text-overflow: ellipsis; font-weight: 500; }
+.rank .net small { font-size: 0.7rem; color: var(--muted); }
+.rank .net.up { color: var(--gold); }
+.rank .net.down { color: var(--danger); }
+.rank tr.me td { background: rgba(224, 176, 74, 0.12); }
+.ai-tag, .you-tag { display: inline-block; font-size: 0.65rem; font-weight: 700; padding: 0 5px; border-radius: 3px; margin-right: 6px; vertical-align: 1px; }
+.ai-tag { background: var(--felt-line); color: var(--ivory); }
+.you-tag { background: var(--gold); color: var(--ink); margin-left: 4px; }

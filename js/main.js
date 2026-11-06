@@ -962,12 +962,12 @@ function finalOverlay() {
 
 // ---- title screen ----
 // The artwork carries its own buttons; transparent hotspots sit on top of them.
-// Positions are in % of the 1536×1024 image. In English the small labels are covered.
+// Positions are in pixels of the 1536×1024 image.
 const TITLE_BUTTONS = [
   { act: 'titlePlay', key: 'titlePlay', box: [505, 750, 530, 125], cls: 'play' },
-  { act: 'settings', key: 'settings', box: [345, 902, 245, 70], label: [36.7, 59] },
-  { act: 'ranking', key: 'ranking', box: [612, 902, 286, 70], label: [35, 60.5] },
-  { act: 'wallet', key: 'wallet', box: [922, 902, 268, 70], label: [40.3, 55] },
+  { act: 'settings', key: 'settings', box: [338, 902, 255, 70] },
+  { act: 'ranking', key: 'ranking', box: [612, 902, 288, 70] },
+  { act: 'wallet', key: 'wallet', box: [920, 902, 275, 70] },
 ];
 
 function titleScreen() {
@@ -978,10 +978,8 @@ function titleScreen() {
       <img src="assets/title.webp" alt="Ron Poker" draggable="false">
       <h1 class="sr-only">Ron Poker</h1>
       ${TITLE_BUTTONS.map(b => `<button type="button" class="hot ${b.cls || ''}" data-act="${b.act}" aria-label="${t(b.key)}"
-        style="left:${pct(b.box[0], 1536)};top:${pct(b.box[1], 1024)};width:${pct(b.box[2], 1536)};height:${pct(b.box[3], 1024)}">
-        ${b.label && getLang() !== 'ja' ? `<span class="t-label" style="left:${b.label[0]}%;width:${b.label[1]}%">${t(b.key)}</span>` : ''}</button>`).join('')}
-    </div>
-`;
+        style="left:${pct(b.box[0], 1536)};top:${pct(b.box[1], 1024)};width:${pct(b.box[2], 1536)};height:${pct(b.box[3], 1024)}"></button>`).join('')}
+    </div>`;
 }
 
 function settingsOverlay() {
@@ -1000,11 +998,59 @@ function settingsOverlay() {
     </div>`;
 }
 
+// Ranking: total NEAR won or lost across every settled testnet table, read from the contract
+// by the referee. Practice games do not count.
+function shortAccount(a) {
+  return a.length > 13 ? `${a.slice(0, 5)}…${a.slice(-5)}` : a;
+}
+
+async function openRanking() {
+  ui.overlay = 'ranking';
+  ui.ranking = { status: PREVIEW ? 'preview' : 'loading' };
+  render();
+  if (PREVIEW) return;
+  try {
+    const [res, me] = await Promise.all([fetch(`${chain.REFEREE_URL}/leaderboard`), chain.currentAccount().catch(() => null)]);
+    if (!res.ok) throw new Error(String(res.status));
+    ui.ranking = { status: 'ok', me, ...(await res.json()) };
+  } catch {
+    ui.ranking = { status: 'error' };
+  }
+  if (ui.overlay === 'ranking') render();
+}
+
 function rankingOverlay() {
+  const r = ui.ranking || { status: 'loading' };
+  let body = '';
+  if (r.status === 'loading') body = `<p class="busy"><span class="dots"><i></i><i></i><i></i></span> ${t('rankingLoading')}</p>`;
+  else if (r.status === 'preview') body = `<p class="note">${t('rankingPreview')} <a href="${LIVE_URL}" target="_blank" rel="noopener">${LIVE_URL}</a></p>`;
+  else if (r.status === 'error') body = `<p class="note">${t('rankingError')}</p>`;
+  else if (!r.rows.length) body = `<p class="note">${t('rankingEmpty')}</p>`;
+  else {
+    const near = y => {
+      const v = Number(BigInt(y) / 10n ** 21n) / 1000;
+      return `${v > 0 ? '+' : v < 0 ? '−' : '±'}${Math.abs(v).toFixed(1)}`;
+    };
+    body = `
+      <div class="rank-wrap"><table class="rank">
+        <thead><tr><th>#</th><th>${t('rankPlayer')}</th><th class="num">${t('rankNet')}</th><th class="num">${t('rankGames')}</th><th class="num">${t('rankFirsts')}</th><th class="num">${t('rankAvg')}</th></tr></thead>
+        <tbody>${r.rows.map((x, i) => `
+          <tr class="${x.account === r.me ? 'me' : ''} ${i < 3 ? `top top${i + 1}` : ''}">
+            <td class="pos">${i + 1}</td>
+            <td class="who" title="${escapeHtml(x.account)}">${x.ai ? `<span class="ai-tag">AI</span>` : ''}${x.name ? escapeHtml(x.name) : shortAccount(x.account)}${x.account === r.me ? ` <span class="you-tag">${t('you')}</span>` : ''}</td>
+            <td class="num net ${BigInt(x.net) > 0n ? 'up' : BigInt(x.net) < 0n ? 'down' : ''}">${near(x.net)} <small>NEAR</small></td>
+            <td class="num">${x.games}</td>
+            <td class="num">${x.firsts}</td>
+            <td class="num">${x.avgRank.toFixed(2)}</td>
+          </tr>`).join('')}</tbody>
+      </table></div>
+      <p class="note">${t('rankingNote', { tables: r.tables })}</p>`;
+  }
   return `
     <div class="sheet ranking">
       <h2>${t('ranking')}</h2>
-      <p class="note">${t('rankingSoon')}</p>
+      <p class="note">${t('rankingIntro')}</p>
+      ${body}
       <div class="row"><button type="button" class="act gold primary" data-act="closeSheet">${t('close')}</button></div>
     </div>`;
 }
@@ -1069,7 +1115,8 @@ document.addEventListener('click', ev => {
   if (act === 'backToIntro') { ui.overlay = 'intro'; render(); }
   if (act === 'titlePlay') { ui.title = false; ui.overlay = 'intro'; fx.sound('deal'); render(); }
   if (act === 'toTitle') { ui.title = true; ui.overlay = null; render(); }
-  if (act === 'settings' || act === 'ranking') { ui.overlay = act; render(); }
+  if (act === 'settings') { ui.overlay = act; render(); }
+  if (act === 'ranking') openRanking();
   if (act === 'closeSheet') { ui.overlay = ui.title ? null : 'intro'; render(); }
   if (act === 'setLang') { setLang(ev.target.closest('[data-lang]').dataset.lang); render(); }
   if (act === 'setSound') { fx.setMuted(ev.target.closest('[data-on]').dataset.on !== '1'); if (!fx.isMuted()) fx.sound('coin'); render(); }

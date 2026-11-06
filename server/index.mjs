@@ -435,6 +435,7 @@ class Table {
     const r = await call(ref, CONTRACT_ID, 'settle', { table_id: this.id, points, seed: this.seed.seed });
     this.closed = true;
     this.broadcast({ t: 'settled', tableId: this.id, points, payouts: r.value, hash: r.hash, seed: this.seed.seed });
+    board.updated = 0; // the ranking picks this table up on its next read
     this.release();
   }
 
@@ -449,6 +450,70 @@ class Table {
     refreshBankrolls();
     setTimeout(() => tables.delete(this.id), 60_000);
   }
+}
+
+// ---- ranking --------------------------------------------------------------------
+// Built from the contract alone: every settled table's players and final points.
+// Nicknames are not on chain; the referee remembers the ones players used since it started.
+
+const nicknames = new Map();
+const board = { scanned: 0, open: new Set(), stats: new Map(), updated: 0, busy: null };
+
+function addSettled(t) {
+  const pts = t.final_points;
+  if (!pts) return;
+  const buyIn = BigInt(t.buy_in || BUY_IN);
+  const perPoint = buyIn / BigInt(t.start_points || START_POINTS);
+  t.players.forEach((acc, i) => {
+    const s = board.stats.get(acc) || { games: 0, net: 0n, firsts: 0, rankSum: 0 };
+    const rank = 1 + pts.filter(p => p > pts[i]).length;
+    s.games += 1;
+    s.net += BigInt(pts[i]) * perPoint - buyIn;
+    s.rankSum += rank;
+    if (rank === 1) s.firsts += 1;
+    board.stats.set(acc, s);
+  });
+}
+
+async function updateBoard() {
+  if (board.busy) return board.busy;
+  board.busy = (async () => {
+    const cfg = await view(CONTRACT_ID, 'get_config');
+    const next = Number(cfg[3]);
+    const ids = [...board.open];
+    for (let id = board.scanned; id < next; id++) ids.push(id);
+    for (let i = 0; i < ids.length; i += 8) {
+      const batch = ids.slice(i, i + 8);
+      const got = await Promise.all(batch.map(id => view(CONTRACT_ID, 'get_table', { table_id: id }).catch(() => undefined)));
+      batch.forEach((id, k) => {
+        const t = got[k];
+        if (t === undefined) { board.open.add(id); return; } // RPC hiccup: try again next time
+        board.open.delete(id);
+        if (!t) return;
+        if (t.status === 'Settled') addSettled(t);
+        else if (t.status === 'Waiting' || t.status === 'Playing') board.open.add(id);
+      });
+    }
+    board.scanned = Math.max(board.scanned, next);
+    board.updated = Date.now();
+  })().finally(() => { board.busy = null; });
+  return board.busy;
+}
+
+async function leaderboard() {
+  if (Date.now() - board.updated > 30_000) await updateBoard();
+  const aiAccounts = Object.fromEntries(Object.values(agents).map((a, i) => [a.accountId, i + 1]));
+  const rows = [...board.stats.entries()].map(([account, s]) => ({
+    account,
+    name: nicknames.get(account) || null,
+    ai: aiAccounts[account] || null,
+    games: s.games,
+    net: s.net.toString(),
+    firsts: s.firsts,
+    avgRank: +(s.rankSum / s.games).toFixed(2),
+  }));
+  rows.sort((a, b) => (BigInt(b.net) > BigInt(a.net) ? 1 : BigInt(b.net) < BigInt(a.net) ? -1 : a.avgRank - b.avgRank));
+  return { updated: board.updated, tables: board.scanned, rows: rows.slice(0, 100) };
 }
 
 // ---- server -------------------------------------------------------------------
@@ -473,6 +538,11 @@ const server = http.createServer((req, res) => {
         res.end('ok');
       } catch (e) { res.statusCode = 400; res.end(String(e.message)); }
     });
+    return;
+  }
+  if (req.url.startsWith('/leaderboard')) {
+    res.setHeader('Content-Type', 'application/json');
+    leaderboard().then(b => res.end(JSON.stringify(b)), e => { res.statusCode = 503; res.end(JSON.stringify({ error: String(e.message || e) })); });
     return;
   }
   if (req.url.startsWith('/health')) {
@@ -505,6 +575,7 @@ wss.on('connection', (ws, req) => {
         player.account = msg.account;
         player.nickname = cleanNickname(msg.nickname);
         player.character = Object.hasOwn(CHARACTERS, msg.character) ? msg.character : null;
+        if (player.nickname) nicknames.set(player.account, player.nickname);
         player.send({ t: 'hello', referee: referee.accountId, contract: CONTRACT_ID, agents: Object.fromEntries(Object.values(agents).map(a => [a.id, a.accountId])) });
       } else if (msg.t === 'resume') {
         const t = tables.get(msg.tableId);
