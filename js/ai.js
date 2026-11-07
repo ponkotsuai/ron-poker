@@ -28,6 +28,12 @@ export function temperament(personality, points, start) {
 
 const FULL = makeDeck();
 
+// Character quirks on top of the numbers:
+//   ronOnly     never wins on its own draw; only takes points straight from another player
+//   minCat      ignores wins below this hand category (see CAT_KEYS)
+//   neverJoker  never throws a joker away by choice
+const counts = (p, ev) => !!ev && ev.cat >= (p.minCat || 0);
+
 function unseenFor(view) {
   const seen = new Set(view.me.hand.map(c => c.id));
   for (const p of view.players) for (const c of p.discards) seen.add(c.id);
@@ -39,13 +45,13 @@ function key(cards) {
 }
 
 // Expected weighted win value of one more draw from a 4-card hand.
-function oneStep(h4, unseen, greed, cache) {
+function oneStep(h4, unseen, greed, cache, p) {
   const k = key(h4);
   if (cache.has(k)) return cache.get(k);
   let s = 0;
   for (const c of unseen) {
     const ev = evaluate([...h4, c]);
-    if (ev) s += Math.pow(ev.points, greed);
+    if (counts(p, ev)) s += Math.pow(ev.points, greed);
   }
   const v = s / Math.max(1, unseen.length);
   cache.set(k, v);
@@ -53,18 +59,18 @@ function oneStep(h4, unseen, greed, cache) {
 }
 
 // Two-step lookahead: win now, or improve and win on the following draws.
-function handValue(h4, unseen, greed, drawsLeft, cache) {
+function handValue(h4, unseen, greed, drawsLeft, cache, p) {
   let s = 0;
   const future = Math.min(3, Math.max(0, drawsLeft - 1));
   for (const c of unseen) {
     const five = [...h4, c];
     const ev = evaluate(five);
-    if (ev) { s += Math.pow(ev.points, greed); continue; }
+    if (counts(p, ev)) { s += Math.pow(ev.points, greed); continue; }
     if (future === 0) continue;
     let best = 0;
     for (let i = 0; i < 5; i++) {
       const next = five.filter((_, j) => j !== i);
-      const v = oneStep(next, unseen.filter(u => u.id !== c.id), greed, cache);
+      const v = oneStep(next, unseen.filter(u => u.id !== c.id), greed, cache, p);
       if (v > best) best = v;
     }
     s += best * future * 0.8;
@@ -108,12 +114,15 @@ export class AIController {
   }
 
   async chooseTsumo(view, ev) {
+    if (this.p.ronOnly) { this.think('thinkNoTsumo', {}); return false; }
+    if (!counts(this.p, ev)) { this.think('thinkTooSmall', { hand: ev.key }); return false; }
     this.think('thinkTsumo', { hand: ev.key, points: ev.points });
     return true;
   }
 
   async chooseRon(view, tile, ev) {
-    this.think('thinkRon', { hand: ev.key, points: ev.points });
+    if (!counts(this.p, ev)) { this.think('thinkTooSmall', { hand: ev.key }); return false; }
+    this.think(this.p.ronOnly ? 'thinkRug' : 'thinkRon', { hand: ev.key, points: ev.points });
     return true;
   }
 
@@ -128,12 +137,13 @@ export class AIController {
 
     const options = hand.map((tile, index) => {
       const rest = hand.filter((_, i) => i !== index);
-      const value = handValue(rest, unseen, t.greed, drawsLeft, cache) * 4;
+      const value = handValue(rest, unseen, t.greed, drawsLeft, cache, this.p) * 4;
       let score = value - t.risk * danger(tile, view);
       if (tile.joker) {
         // Keeping a joker is worth something beyond the math: a shot at double points.
         score -= t.keepJoker * 0.6;
         if (threatened) score += (1 - t.keepJoker) * 1.2;
+        if (this.p.neverJoker) score = -Infinity;
       }
       return { index, tile, rest, value, score, danger: danger(tile, view) };
     });
@@ -142,10 +152,10 @@ export class AIController {
     const greedyBest = options.slice().sort((a, b) => b.value - a.value)[0];
 
     // Riichi when ready, unless a greedy player is holding out for a bigger hand early on.
-    const waits = waitingCards(best.rest, unseen);
+    const waits = waitingCards(best.rest, unseen).filter(w => counts(this.p, w.ev));
     let riichi = waits.length > 0;
     const topWait = waits.reduce((m, w) => Math.max(m, w.ev.points), 0);
-    if (riichi && t.greed > 1.3 && topWait <= 1 && view.wallCount > 22) riichi = false;
+    if (riichi && t.greed > 1.3 && topWait <= 1 && view.wallCount > 22 && !this.p.ronOnly) riichi = false;
 
     if (riichi) {
       this.think('thinkRiichi', { waits: new Set(waits.map(w => w.card.r)).size, points: topWait });

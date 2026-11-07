@@ -159,15 +159,15 @@ The computer players are rule-based (not an LLM). Each looks two draws ahead ove
 | Character | Style | How it plays |
 |---|---|---|
 | King Bit | Old money | patient, defends a lead |
-| Don Whale | High roller | chases big hands, holds the joker for the double |
-| Hodl💎Gorilla | Diamond hands | never folds, keeps every joker |
+| Don Whale | High roller | chases big hands; never wins with Three of a Kind |
+| Hodl💎Gorilla | Diamond hands | never folds, never throws a joker away |
 | Shibainu | Speedster | takes any win, fast |
 | Ethra | Calculator | never throws a dangerous card |
 | Nia | All-rounder | balanced, NEAR's poster girl |
 | Peperon | Bluffer | greedy, pushes on |
 | Bulldo | Bullish | pushes even into a riichi |
 | Beary | Bearish | folds at the first sign of danger |
-| Ruggy | Shapeshifter | reacts twice as hard to its score |
+| Ruggy | Rug puller | never wins on its own draw, only by ron; reacts twice as hard to its score |
 
 All of them shift mood with the points (= NEAR) they have left at the table, and say why they did what they did in speech bubbles. On testnet the referee's three AI wallets each play as a character nobody at the table picked.
 

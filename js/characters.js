@@ -5,6 +5,9 @@
 //   risk       how strongly it avoids dangerous discards once someone has declared riichi
 //   keepJoker  how keen it is to hold a joker for the double instead of using it as a safe throw
 //   adaptive   reacts twice as hard to its own score
+//   ronOnly    never wins on its own draw (tsumo), only off someone's discard
+//   minCat     smallest hand it will win with (4 = Straight; see CAT_KEYS in engine.js)
+//   neverJoker never throws a joker away by choice
 // This file is plain data so the referee server can import it too.
 
 export const CHARACTERS = {
@@ -17,14 +20,14 @@ export const CHARACTERS = {
   whale: {
     name: { ja: 'ドン・ホエール', en: 'Don Whale' },
     style: { ja: '大口', en: 'High roller' },
-    bio: { ja: '一手で相場を動かす。安い上がりには興味がない。', en: 'Moves the market in one trade. Cheap wins bore him.' },
-    play: { greed: 1.6, risk: 0.45, keepJoker: 0.9 },
+    bio: { ja: '一手で相場を動かす。安い上がりには興味がない。スリーカードでは上がらない。', en: 'Moves the market in one trade. Cheap wins bore him: he never wins with Three of a Kind.' },
+    play: { greed: 1.6, risk: 0.45, keepJoker: 0.9, minCat: 4 },
   },
   gorilla: {
     name: { ja: 'ガチホ💎ゴリラ', en: 'Hodl💎Gorilla' },
     style: { ja: 'ダイヤの手', en: 'Diamond hands' },
-    bio: { ja: '一度握ったら離さない。「降りる」という言葉を知らない。', en: 'Never lets go. Has never heard the word "fold".' },
-    play: { greed: 1.3, risk: 0.25, keepJoker: 1.0 },
+    bio: { ja: '一度握ったら離さない。「降りる」という言葉を知らない。ジョーカーも絶対に捨てない。', en: 'Never lets go. Has never heard the word "fold", and never throws a joker away.' },
+    play: { greed: 1.3, risk: 0.25, keepJoker: 1.0, neverJoker: true },
   },
   shiba: {
     name: { ja: 'シバイーヌ', en: 'Shibainu' },
@@ -64,9 +67,9 @@ export const CHARACTERS = {
   },
   fox: {
     name: { ja: 'ラギー', en: 'Ruggy' },
-    style: { ja: '変幻自在', en: 'Shapeshifter' },
-    bio: { ja: '札束の匂いに敏感。勝っても負けても打ち方を変える。', en: 'Smells money. Changes style with every swing of the score.' },
-    play: { greed: 1.0, risk: 1.0, keepJoker: 0.6, adaptive: true },
+    style: { ja: 'ラグプル', en: 'Rug puller' },
+    bio: { ja: '人から奪うことしか考えていない。ツモでは上がらず、ロンだけを狙う。', en: 'Only thinks about taking from others. Never wins on its own draw: ron or nothing.' },
+    play: { greed: 1.0, risk: 1.0, keepJoker: 0.6, adaptive: true, ronOnly: true },
   },
 };
 
