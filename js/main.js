@@ -935,7 +935,10 @@ function introOverlay() {
   return `
     <div class="sheet intro">
       <button type="button" class="act ghost to-title" data-act="toTitle">← ${t('title')}</button>
-      <button type="button" class="act ghost lang-switch" data-act="lang" lang="${getLang() === 'ja' ? 'en' : 'ja'}">${t('lang')}</button>
+      <div class="sheet-tools">
+        <button type="button" class="act ghost" data-act="rules">${t('rules')}</button>
+        <button type="button" class="act ghost" data-act="lang" lang="${getLang() === 'ja' ? 'en' : 'ja'}">${t('lang')}</button>
+      </div>
       <p class="eyebrow">NEAR HACKATHON · testnet</p>
       <h1 class="logo">RON<span>POKER</span></h1>
       <p class="tagline">${t('tagline')}</p>
@@ -1147,6 +1150,7 @@ function render() {
   $('#mine').innerHTML = myArea();
   ronHint();
   $('#rotateHint').textContent = t('rotateHint');
+  document.body.classList.toggle('at-table', !ui.title && !ui.overlay);
   const ov = $('#overlay');
   const title = $('#title');
   if (title.hidden === ui.title || title.dataset.lang !== getLang()) {
