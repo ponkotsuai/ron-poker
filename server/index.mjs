@@ -33,12 +33,14 @@ const AI_IDS = ['tanuki', 'tsuru', 'kitsune'];
 const AI_METHODS = ['join', 'abort'];
 const BUY_IN = 3n * NEAR;
 const AI_TOP_UP = 6n * NEAR;
-const DECISION_MS = 60_000; // a human who does not answer in time plays the safe default
+// A human who does not answer in time plays the safe default: throw the card just drawn,
+// or take the win. The browser shows the clock.
+const DECISION_MS = { discard: 25_000, tsumo: 12_000, ron: 12_000 };
 const RESULT_MS = 25_000; // how long the hand result stays up if a human does not press next
 const QUEUE_MS = Number(process.env.QUEUE_MS || 15_000); // random match: wait this long for people, then fill with AIs
 const PAY_MS = Number(process.env.PAY_MS || 120_000); // every human must pay the buy-in within this time
 const ROOM_IDLE_MS = 15 * 60_000;
-const AI_DELAY = process.env.FAST ? { discard: 0, tsumo: 0, ron: 0, auto: 0 } : { discard: 800, tsumo: 500, ron: 500, auto: 600 };
+const AI_DELAY = process.env.FAST ? { discard: 0, tsumo: 0, ron: 0, auto: 0 } : { discard: 1300, tsumo: 800, ron: 800, auto: 1000 };
 
 // ---- identities -----------------------------------------------------------
 
@@ -340,10 +342,10 @@ class Table {
         this.waiting.delete(seat);
         resolve(v);
       };
-      const ms = p.connected() ? (kind === 'next' ? RESULT_MS : DECISION_MS) : 1200;
+      const ms = p.connected() ? (kind === 'next' ? RESULT_MS : DECISION_MS[kind] || 25_000) : 1200;
       this.waiting.set(seat, { kind, fallback, payload, resolve: done, timer: setTimeout(() => done(fallback), ms) });
       this.snapshot(p);
-      p.send({ t: 'prompt', kind, ...payload });
+      p.send({ t: 'prompt', kind, ms: kind === 'next' ? undefined : ms, ...payload });
     });
   }
 

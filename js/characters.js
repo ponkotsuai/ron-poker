@@ -33,7 +33,7 @@ export const CHARACTERS = {
     play: { greed: 0.6, risk: 0.8, keepJoker: 0.2 },
   },
   witch: {
-    name: { ja: 'エスラ', en: 'ETHRA' },
+    name: { ja: 'エスラ', en: 'Ethra' },
     style: { ja: '計算魔', en: 'Calculator' },
     bio: { ja: 'すべてのカードを数える。危ない札は決して切らない。', en: 'Counts every card. Never throws a dangerous one.' },
     play: { greed: 1.0, risk: 1.5, keepJoker: 0.5 },
@@ -45,25 +45,25 @@ export const CHARACTERS = {
     play: { greed: 1.0, risk: 1.0, keepJoker: 0.6 },
   },
   frog: {
-    name: { ja: 'ペペロン', en: 'PePeRon' },
+    name: { ja: 'ペペロン', en: 'Peperon' },
     style: { ja: 'ハッタリ', en: 'Bluffer' },
     bio: { ja: 'いつもニヤニヤ。手が良いのか悪いのか読めない。', en: 'Always smirking. You never know if the hand is good.' },
     play: { greed: 1.4, risk: 0.6, keepJoker: 0.8 },
   },
   bull: {
-    name: { ja: 'ブルド', en: 'BULLDO' },
+    name: { ja: 'ブルド', en: 'Bulldo' },
     style: { ja: '超強気', en: 'Bullish' },
     bio: { ja: '上しか見ていない。リーチが来ても押す。', en: 'Only looks up. Pushes even into a riichi.' },
     play: { greed: 1.5, risk: 0.3, keepJoker: 0.7 },
   },
   bear: {
-    name: { ja: 'ベアリー', en: 'BEARY' },
+    name: { ja: 'ベアリー', en: 'Beary' },
     style: { ja: '超弱気', en: 'Bearish' },
     bio: { ja: 'どうせ下がると思っている。危なければすぐ降りる。', en: 'Expects the worst. Folds at the first sign of danger.' },
     play: { greed: 0.8, risk: 1.7, keepJoker: 0.3 },
   },
   fox: {
-    name: { ja: 'ラギー', en: 'RUGGY' },
+    name: { ja: 'ラギー', en: 'Ruggy' },
     style: { ja: '変幻自在', en: 'Shapeshifter' },
     bio: { ja: '札束の匂いに敏感。勝っても負けても打ち方を変える。', en: 'Smells money. Changes style with every swing of the score.' },
     play: { greed: 1.0, risk: 1.0, keepJoker: 0.6, adaptive: true },

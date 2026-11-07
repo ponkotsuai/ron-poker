@@ -162,12 +162,12 @@ The computer players are rule-based (not an LLM). Each looks two draws ahead ove
 | Don Whale | High roller | chases big hands, holds the joker for the double |
 | Hodl💎Gorilla | Diamond hands | never folds, keeps every joker |
 | Shibainu | Speedster | takes any win, fast |
-| ETHRA | Calculator | never throws a dangerous card |
+| Ethra | Calculator | never throws a dangerous card |
 | Nia | All-rounder | balanced, NEAR's poster girl |
-| PePeRon | Bluffer | greedy, pushes on |
-| BULLDO | Bullish | pushes even into a riichi |
-| BEARY | Bearish | folds at the first sign of danger |
-| RUGGY | Shapeshifter | reacts twice as hard to its score |
+| Peperon | Bluffer | greedy, pushes on |
+| Bulldo | Bullish | pushes even into a riichi |
+| Beary | Bearish | folds at the first sign of danger |
+| Ruggy | Shapeshifter | reacts twice as hard to its score |
 
 All of them shift mood with the points (= NEAR) they have left at the table, and say why they did what they did in speech bubbles. On testnet the referee's three AI wallets each play as a character nobody at the table picked.
 

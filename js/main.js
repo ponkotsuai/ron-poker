@@ -177,6 +177,15 @@ class HumanController {
   }
 }
 
+// Game speed (practice): how long the computer players take per move. Online tables are paced
+// by the referee.
+const SPEEDS = { slow: 1.6, normal: 1, fast: 0.55 };
+function loadSpeed() {
+  try { const v = localStorage.getItem('ronpoker.speed'); return SPEEDS[v] ? v : 'normal'; } catch { return 'normal'; }
+}
+ui.speed = loadSpeed();
+const pace = ms => Math.round(ms * SPEEDS[ui.speed]);
+
 class PacedAI {
   constructor(seat, ai) { this.seat = seat; this.ai = ai; }
 
@@ -189,10 +198,10 @@ class PacedAI {
     return out;
   }
 
-  chooseTsumo(view, ev) { return this.wrap(() => this.ai.chooseTsumo(view, ev), 450); }
-  chooseRon(view, tile, ev, from) { return this.wrap(() => this.ai.chooseRon(view, tile, ev, from), 450); }
-  chooseDiscard(view) { return this.wrap(() => this.ai.chooseDiscard(view), 750); }
-  beforeAutoDiscard() { return this.wrap(() => null, 550); }
+  chooseTsumo(view, ev) { return this.wrap(() => this.ai.chooseTsumo(view, ev), pace(800)); }
+  chooseRon(view, tile, ev, from) { return this.wrap(() => this.ai.chooseRon(view, tile, ev, from), pace(800)); }
+  chooseDiscard(view) { return this.wrap(() => this.ai.chooseDiscard(view), pace(1300)); }
+  beforeAutoDiscard() { return this.wrap(() => null, pace(1000)); }
 }
 
 // ---- game wiring -------------------------------------------------------
@@ -428,6 +437,8 @@ function onRefereeMessage(m, state) {
       break;
     case 'event':
       if (m.type === 'handStart' && ui.overlay === 'result') { ui.overlay = null; ui.resolveOverlay = null; }
+      // The referee played for you when the clock ran out.
+      if (ui.pending && (m.type !== 'discard' || toLocal(m.e.seat) === HUMAN) && m.type !== 'draw') { ui.pending = null; ui.selected = null; }
       if (m.type === 'gameEnd') {
         c.phase = 'settling';
         c.busy = true;
@@ -454,7 +465,12 @@ function onRefereeMessage(m, state) {
         ui.pending = {
           type: m.kind, ev: m.ev, tile: m.tile, from: toLocal(m.from),
           resolve: value => c.conn.send({ t: 'decide', kind: m.kind, value }),
+          deadline: m.ms ? Date.now() + m.ms : null, ms: m.ms,
         };
+        if (m.ms > 6000) {
+          const p = ui.pending;
+          setTimeout(() => { if (ui.pending === p) { fx.sound('turn'); render(); } }, m.ms - 5000);
+        }
         render();
       }
       break;
@@ -844,7 +860,17 @@ function myArea() {
       ${drawn ? `<span class="gap"></span>${tile(drawn.c, { size: 'lg', button: discarding, index: drawn.index, selected: ui.selected === drawn.index, mark: discarding && marks[drawn.index], win: winSet, drawnIn: once('drawn') })}` : ''}
       ${ronTile}
     </div>
-    <div class="actions">${actions}</div>`;
+    <div class="actions">${actions}${turnClock()}</div>`;
+}
+
+// Online only: how long you have left before the referee plays the safe move for you.
+function turnClock() {
+  const p = ui.pending;
+  if (!p || !p.deadline || !p.ms) return '';
+  const left = p.deadline - Date.now();
+  if (left <= 0) return '';
+  return `<div class="clock ${left < 5000 ? 'urgent' : ''}" role="timer" aria-label="${t('timeLeft', { s: Math.ceil(left / 1000) })}">
+    <i style="animation-duration:${p.ms}ms;animation-delay:-${p.ms - left}ms"></i></div>`;
 }
 
 function fitStage() {
@@ -989,6 +1015,8 @@ function settingsOverlay() {
       <h2>${t('settings')}</h2>
       <div class="set-row"><span class="label">${t('language')}</span>
         <div class="seg"><button type="button" class="act ${ja ? '' : 'gold'}" data-act="setLang" data-lang="en">English</button><button type="button" class="act ${ja ? 'gold' : ''}" data-act="setLang" data-lang="ja">日本語</button></div></div>
+      <div class="set-row"><span class="label">${t('speed')}</span>
+        <div class="seg">${Object.keys(SPEEDS).map(k => `<button type="button" class="act ${ui.speed === k ? 'gold' : ''}" data-act="setSpeed" data-speed="${k}">${t(`speeds.${k}`)}</button>`).join('')}</div></div>
       <div class="set-row"><span class="label">${t('sound')}</span>
         <div class="seg"><button type="button" class="act ${fx.isMuted() ? '' : 'gold'}" data-act="setSound" data-on="1">ON</button><button type="button" class="act ${fx.isMuted() ? 'gold' : ''}" data-act="setSound" data-on="0">OFF</button></div></div>
       <div class="row">
@@ -1118,6 +1146,11 @@ document.addEventListener('click', ev => {
   if (act === 'settings') { ui.overlay = act; render(); }
   if (act === 'ranking') openRanking();
   if (act === 'closeSheet') { ui.overlay = ui.title ? null : 'intro'; render(); }
+  if (act === 'setSpeed') {
+    ui.speed = ev.target.closest('[data-speed]').dataset.speed;
+    try { localStorage.setItem('ronpoker.speed', ui.speed); } catch { /* ignore */ }
+    render();
+  }
   if (act === 'setLang') { setLang(ev.target.closest('[data-lang]').dataset.lang); render(); }
   if (act === 'setSound') { fx.setMuted(ev.target.closest('[data-on]').dataset.on !== '1'); if (!fx.isMuted()) fx.sound('coin'); render(); }
   if (act === 'wallet') {
