@@ -564,3 +564,6 @@ button.tile.selected { transform: translateY(-12px); box-shadow: 0 calc(var(--w)
 @keyframes pulse-red { to { box-shadow: inset 0 0 0 1px var(--danger), 0 0 12px rgba(255, 90, 90, 0.6); } }
 
 .credits { margin: 0; font-size: 0.72rem; color: var(--muted); line-height: 1.5; }
+
+.cpu-tag { display: inline-block; font-size: 0.68rem; font-weight: 700; letter-spacing: 0.04em; padding: 0 6px; border-radius: 3px; border: 1px solid var(--muted); color: var(--muted); vertical-align: 1px; }
+.pick-note { margin: -4px 0 0; font-size: 0.78rem; color: var(--muted); }

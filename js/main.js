@@ -907,8 +907,9 @@ function introOverlay() {
       </div>
       <div class="picked">
         <img src="${portraitUrl(ui.char, 'joy')}" alt="" draggable="false">
-        <p><b>${charName(ui.char)}</b> <em>${charStyle(ui.char)}</em><br>${charBio(ui.char)}</p>
+        <p><b>${charName(ui.char)}</b><br><span class="cpu-tag">${t('asCpu')}</span> <em>${charStyle(ui.char)}</em> — ${charBio(ui.char)}</p>
       </div>
+      <p class="pick-note">${t('pickNote')}</p>
       <div class="nick-row">
         <label for="nick" class="label">${t('nickname')}</label>
         <input id="nick" class="nick-input" maxlength="12" autocomplete="nickname" placeholder="${t('nicknamePlaceholder')}" value="${escapeHtml(ui.nick)}">
