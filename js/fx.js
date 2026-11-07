@@ -243,6 +243,10 @@ export function sound(name) {
       tone(ac, { freq: 70, type: 'sine', dur: 1.2, gain: 0.8, slide: 35 });
       [392, 523, 659, 784, 1046, 1318].forEach((f, i) => tone(ac, { freq: f, type: 'sawtooth', at: 0.1 + i * 0.09, dur: 1.2, gain: 0.05 }));
       break;
+    case 'chance': // a win is on the table: a bright rising shimmer
+      [784, 988, 1175, 1568].forEach((f, i) => tone(ac, { freq: f, type: 'sine', at: i * 0.06, dur: 0.35, gain: 0.1 }));
+      tone(ac, { freq: 2093, type: 'triangle', at: 0.26, dur: 0.5, gain: 0.06 });
+      break;
     case 'coin':
       tone(ac, { freq: 1800 + Math.random() * 400, type: 'square', dur: 0.08, gain: 0.04 });
       tone(ac, { freq: 2600, type: 'sine', at: 0.03, dur: 0.12, gain: 0.05 });

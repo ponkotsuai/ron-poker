@@ -2,7 +2,7 @@ Voice lines made with VOICEVOX (https://voicevox.hiroshiba.jp/).
 
 VOICEVOX:ちび式じい      King Bit (king-*.mp3)
 VOICEVOX:青山龍星        Don Whale (whale-*.mp3), Bulldo (bull-*.mp3)
-VOICEVOX:玄野武宏        Hodl💎Gorilla (gorilla-*.mp3)
+VOICEVOX:玄野武宏        Hodl💎Gorilla (gorilla-*.mp3, ツンギレ, pitch lowered)
 VOICEVOX:ずんだもん      Shibainu (shiba-*.mp3)
 VOICEVOX:四国めたん      Ethra (witch-*.mp3)
 VOICEVOX:琴詠ニア        Nia (nia-*.mp3)

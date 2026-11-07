@@ -682,6 +682,8 @@ function tile(c, opts = {}) {
   if (opts.drawnIn) cls.push('drawn-in');
   if (opts.selected) cls.push('selected');
   if (opts.win) cls.push('win');
+  if (opts.ronTarget) cls.push('ron-target');
+  if (opts.ronIn) cls.push('ron-in');
   const inner = c.joker
     ? `<span class="j-word">JOKER</span><span class="j-mult">×2</span>`
     : `<span class="rank">${cardLabel(c).slice(0, -1)}</span><span class="suit">${cardLabel(c).slice(-1)}</span>`;
@@ -719,6 +721,7 @@ function river(p, seat, turn) {
     sideways: p.riichiAt === i,
     fresh: ui.lastDiscard && ui.lastDiscard.seat === seat && ui.lastDiscard.id === c.id,
     land: once('land') === `${seat}:${c.id}`,
+    ronTarget: ui.pending?.type === 'ron' && ui.pending.from === seat && ui.pending.tile.id === c.id,
   })).join('');
   return `<div class="river ${turn ? 'turn' : ''}" style="${around(seat, 240, 118)}" aria-label="${seatName(seat)}">${tiles}</div>`;
 }
@@ -756,7 +759,7 @@ function nameplate(seat) {
   const sub = seat === HUMAN ? charName(ui.char) : isAI ? charStyle(info.character || info.id) : info.character ? charName(info.character) : t('humanTag');
   const { left, top } = PLATE[seat];
   return `
-    <section class="np s${seat} ${active ? 'active' : ''} ${p.riichi ? 'in-riichi' : ''}" id="np-${seat}" style="left:${left}px;top:${top}px" aria-label="${seatName(seat)}">
+    <section class="np s${seat} ${active ? 'active' : ''} ${p.riichi ? 'in-riichi' : ''} ${ui.pending?.type === 'ron' && ui.pending.from === seat ? 'ron-from' : ''}" id="np-${seat}" style="left:${left}px;top:${top}px" aria-label="${seatName(seat)}">
       <span class="avatar ${isAI ? '' : 'human'}">${avatar(seat)}</span>
       <div class="np-body">
         <p class="np-name"><span class="nm">${seatName(seat)}</span>${dealer ? `<span class="dealer">${t('dealer')}</span>` : ''}</p>
@@ -854,7 +857,7 @@ function myArea() {
       <button type="button" class="act big" data-act="no">${t('pass')}</button>
       <button type="button" class="act big gold call" data-act="yes">${t('ron')}</button>`;
   }
-  const ronTile = pending?.type === 'ron' ? `<span class="plus">+</span>${tile(pending.tile, { size: 'lg', win: true })}` : '';
+  const ronTile = pending?.type === 'ron' ? `<span class="plus">+</span>${tile(pending.tile, { size: 'lg', win: true, ronIn: true })}` : '';
   const status = statusText();
   return `
     ${status ? `<p class="status" role="status">${status}</p>` : '<p class="status empty" role="status"></p>'}
@@ -874,6 +877,41 @@ function turnClock() {
   if (left <= 0) return '';
   return `<div class="clock ${left < 5000 ? 'urgent' : ''}" role="timer" aria-label="${t('timeLeft', { s: Math.ceil(left / 1000) })}">
     <i style="animation-duration:${p.ms}ms;animation-delay:-${p.ms - left}ms"></i></div>`;
+}
+
+// When you can ron, point at the card in the discards that completes your hand and draw
+// a line from it to your hand. Only your screen shows this: nobody else knows until you call.
+function ronHint() {
+  document.getElementById('ronHint')?.remove();
+  const p = ui.pending;
+  if (!p || p.type !== 'ron' || !ui.game) return;
+  const stage = $('#stage');
+  const target = $('#board .tile.ron-target');
+  const mine = $('#mine .tile.ron-in');
+  if (!target || !mine) return;
+  const sr = stage.getBoundingClientRect();
+  const k = sr.width / STAGE_W;
+  const centre = el => {
+    const r = el.getBoundingClientRect();
+    return { x: (r.left + r.width / 2 - sr.left) / k, y: (r.top + r.height / 2 - sr.top) / k, h: r.height / k };
+  };
+  const a = centre(target);
+  const b = centre(mine);
+  const mid = { x: (a.x + b.x) / 2 + (b.x > a.x ? -60 : 60), y: Math.min(a.y, b.y) - 40 };
+  const fresh = ui.ronShown !== p;
+  ui.ronShown = p;
+  const el = document.createElement('div');
+  el.id = 'ronHint';
+  el.className = `ron-hint ${fresh ? 'fresh' : ''}`;
+  el.innerHTML = `
+    <svg viewBox="0 0 ${STAGE_W} ${STAGE_H}" aria-hidden="true">
+      <path class="beam" d="M${a.x},${a.y} Q${mid.x},${mid.y} ${b.x},${b.y - b.h / 2 - 8}"/>
+      <circle class="ring" cx="${a.x}" cy="${a.y}" r="${a.h * 0.75}"/>
+    </svg>
+    <span class="ron-tag" style="left:${a.x}px;top:${a.y - a.h / 2 - 12}px">${t('ronHere')}</span>
+    ${fresh ? '<span class="ron-flash"></span>' : ''}`;
+  $('.table').appendChild(el);
+  if (fresh) fx.sound('chance');
 }
 
 function fitStage() {
@@ -1107,6 +1145,7 @@ function render() {
   $('#rulesBtn').textContent = t('rules');
   $('#board').innerHTML = board();
   $('#mine').innerHTML = myArea();
+  ronHint();
   $('#rotateHint').textContent = t('rotateHint');
   const ov = $('#overlay');
   const title = $('#title');
