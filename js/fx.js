@@ -141,11 +141,7 @@ export function setMuted(m) {
 
 function audio() {
   if (muted) return null;
-  if (!ctx) {
-    const AC = window.AudioContext || window.webkitAudioContext;
-    if (!AC) return null;
-    ctx = new AC();
-  }
+  if (!audioCtx()) return null;
   if (ctx.state === 'suspended') ctx.resume();
   return ctx;
 }
@@ -259,4 +255,101 @@ export function sound(name) {
       break;
     default:
   }
+}
+
+// ---- voices and music ------------------------------------------------------------
+// Voice lines (assets/voice/<character>-<riichi|ron|tsumo>.mp3) were made with VOICEVOX.
+// The music is an original loop (assets/bgm.mp3). Both use the Web Audio clock so they
+// follow the sound switches and need no <audio> elements.
+
+const buffers = new Map();
+function loadBuffer(url) {
+  if (!buffers.has(url)) {
+    buffers.set(url, fetch(url).then(r => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(r.status))))
+      .then(b => new Promise((res, rej) => (ctx || audioCtx()).decodeAudioData(b, res, rej)))
+      .catch(() => null));
+  }
+  return buffers.get(url);
+}
+
+function audioCtx() {
+  if (!ctx) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (AC) ctx = new AC();
+  }
+  return ctx;
+}
+
+/** Warm the cache for the characters at the table. */
+export function preloadVoices(chars) {
+  if (!audioCtx()) return;
+  for (const c of chars) for (const l of ['riichi', 'ron', 'tsumo']) loadBuffer(`assets/voice/${c}-${l}.mp3`);
+}
+
+let musicGain = null;
+/** A character shouts the call. The music dips while they speak. */
+export async function voice(char, line) {
+  const ac = audio();
+  if (!ac) return;
+  const buf = await loadBuffer(`assets/voice/${char}-${line}.mp3`);
+  if (!buf || muted) return;
+  const src = ac.createBufferSource();
+  src.buffer = buf;
+  const g = ac.createGain();
+  g.gain.value = 1;
+  src.connect(g).connect(ac.destination);
+  src.start();
+  if (musicGain) {
+    const t = ac.currentTime;
+    musicGain.gain.cancelScheduledValues(t);
+    musicGain.gain.setTargetAtTime(MUSIC_VOL * 0.35, t, 0.05);
+    musicGain.gain.setTargetAtTime(MUSIC_VOL, t + buf.duration + 0.3, 0.4);
+  }
+}
+
+const MUSIC_VOL = 0.32;
+const LOOP_SEC = 16 * 4 * 60 / 126; // 16 bars at 126 bpm
+let musicOn = true;
+try { musicOn = localStorage.getItem('ronpoker.music') !== '0'; } catch { /* default on */ }
+let musicSrc = null;
+
+export function isMusicOn() { return musicOn; }
+export function setMusic(on) {
+  musicOn = on;
+  try { localStorage.setItem('ronpoker.music', on ? '1' : '0'); } catch { /* ignore */ }
+  if (on) startMusic(); else stopMusic();
+}
+
+/** Start the loop (call from a click: browsers only allow sound after one). */
+export async function startMusic() {
+  if (!musicOn || musicSrc) return;
+  const ac = audioCtx();
+  if (!ac) return;
+  if (ac.state === 'suspended') ac.resume();
+  const buf = await loadBuffer('assets/bgm.mp3');
+  if (!buf || !musicOn || musicSrc) return;
+  musicGain = ac.createGain();
+  musicGain.gain.setValueAtTime(0.0001, ac.currentTime);
+  musicGain.gain.exponentialRampToValueAtTime(MUSIC_VOL, ac.currentTime + 1.5);
+  musicGain.connect(ac.destination);
+  const src = ac.createBufferSource();
+  src.buffer = buf;
+  src.loop = true;
+  // Skip any encoder padding at the start so the loop joins on the bar line.
+  const pad = Math.max(0, Math.min(0.1, buf.duration - LOOP_SEC));
+  src.loopStart = pad;
+  src.loopEnd = pad + Math.min(LOOP_SEC, buf.duration - pad);
+  src.connect(musicGain);
+  src.start(0, pad);
+  musicSrc = src;
+}
+
+export function stopMusic() {
+  if (!musicSrc || !ctx) return;
+  const src = musicSrc;
+  const g = musicGain;
+  musicSrc = null;
+  musicGain = null;
+  g.gain.setTargetAtTime(0.0001, ctx.currentTime, 0.2);
+  setTimeout(() => { try { src.stop(); } catch { /* already stopped */ } }, 900);
 }

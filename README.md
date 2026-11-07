@@ -189,3 +189,9 @@ All of them shift mood with the points (= NEAR) they have left at the table, and
 - **Testnet only.** Playing for real money would count as gambling in Japan, where this was built, so the game never touches mainnet NEAR.
 - **The referee is trusted for the play itself.** Hidden hands need someone to deal, so the referee sees the cards. What it cannot do is take the pot, change the deck after the commit, or keep the buy-ins: results must add up, the seed is checked, and players can always get a refund after the timeout.
 - The referee runs on a free Render instance and may need up to a minute to wake up.
+
+## Credits
+
+- Voice lines: made with VOICEVOX. VOICEVOX:ちび式じい, VOICEVOX:青山龍星, VOICEVOX:玄野武宏, VOICEVOX:ずんだもん, VOICEVOX:四国めたん, VOICEVOX:琴詠ニア, VOICEVOX:剣崎雌雄, VOICEVOX:白上虎太郎, VOICEVOX:雀松朱司 (which voice plays which character: `assets/voice/CREDITS.txt`).
+- Music: an original lounge loop written for Ron Poker (`assets/bgm.mp3`).
+- Sound effects: synthesized in the browser with the Web Audio API.

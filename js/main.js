@@ -230,6 +230,7 @@ function onEvent(type, e) {
   const g = ui.game;
   if (type === 'handStart') {
     ui.lastDiscard = null;
+    if (e.handNo === 0) fx.preloadVoices([0, 1, 2, 3].map(seatChar));
     setOnce('deal', true);
     fx.banner(t('handBanner', { n: e.handNo + 1 }), t('handBannerSub', { n: e.handNo + 1, total: g.totalHands }));
     fx.sound('deal');
@@ -255,6 +256,7 @@ function onEvent(type, e) {
       setOnce('stick', e.seat);
       setExpr(e.seat, 'fun');
       fx.sound('riichi');
+      fx.voice(seatChar(e.seat), 'riichi');
       fx.cutIn('riichi', { title: 'リーチ', kanji: '立直', who: seatName(e.seat), portrait: portraitImg(e.seat, 'fun') });
     }
     const key = e.riichi ? 'logRiichi' : 'logDiscard';
@@ -265,6 +267,7 @@ function onEvent(type, e) {
     const big = e.ev.cat >= 8;
     const total = e.ev.points * (e.type === 'ron' ? 3 : 1);
     fx.sound(big ? 'yakuman' : e.type);
+    fx.voice(seatChar(e.winner), e.type);
     setExpr(e.winner, 'joy', 7000);
     if (e.type === 'ron') setExpr(e.loser, 'angry', 7000);
     else for (const x of e.transfers || []) if (x.from !== e.winner) setExpr(x.from, 'sad', 7000);
@@ -1019,6 +1022,9 @@ function settingsOverlay() {
         <div class="seg">${Object.keys(SPEEDS).map(k => `<button type="button" class="act ${ui.speed === k ? 'gold' : ''}" data-act="setSpeed" data-speed="${k}">${t(`speeds.${k}`)}</button>`).join('')}</div></div>
       <div class="set-row"><span class="label">${t('sound')}</span>
         <div class="seg"><button type="button" class="act ${fx.isMuted() ? '' : 'gold'}" data-act="setSound" data-on="1">ON</button><button type="button" class="act ${fx.isMuted() ? 'gold' : ''}" data-act="setSound" data-on="0">OFF</button></div></div>
+      <div class="set-row"><span class="label">${t('music')}</span>
+        <div class="seg"><button type="button" class="act ${fx.isMusicOn() ? 'gold' : ''}" data-act="setMusic" data-on="1">ON</button><button type="button" class="act ${fx.isMusicOn() ? '' : 'gold'}" data-act="setMusic" data-on="0">OFF</button></div></div>
+      <p class="credits">${t('credits')}</p>
       <div class="row">
         <button type="button" class="act" data-act="rules">${t('rules')}</button>
         <button type="button" class="act gold primary" data-act="closeSheet">${t('close')}</button>
@@ -1126,6 +1132,7 @@ function resolvePending(value) {
 }
 
 document.addEventListener('click', ev => {
+  fx.startMusic();
   const tileBtn = ev.target.closest('button.tile[data-index]');
   if (tileBtn && ui.pending?.type === 'discard') {
     const i = Number(tileBtn.dataset.index);
@@ -1152,6 +1159,7 @@ document.addEventListener('click', ev => {
     render();
   }
   if (act === 'setLang') { setLang(ev.target.closest('[data-lang]').dataset.lang); render(); }
+  if (act === 'setMusic') { fx.setMusic(ev.target.closest('[data-on]').dataset.on === '1'); render(); }
   if (act === 'setSound') { fx.setMuted(ev.target.closest('[data-on]').dataset.on !== '1'); if (!fx.isMuted()) fx.sound('coin'); render(); }
   if (act === 'wallet') {
     if (PREVIEW) { ui.title = false; ui.overlay = 'intro'; render(); }

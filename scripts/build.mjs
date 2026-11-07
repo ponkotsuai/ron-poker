@@ -26,6 +26,8 @@ mkdirSync('dist', { recursive: true });
 // The preview loads the character art from next to itself.
 cpSync('assets/chars', 'dist/assets/chars', { recursive: true });
 cpSync('assets/title.webp', 'dist/assets/title.webp');
+cpSync('assets/voice', 'dist/assets/voice', { recursive: true });
+cpSync('assets/bgm.mp3', 'dist/assets/bgm.mp3');
 writeFileSync('dist/preview.html', `<title>Ron Poker</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 ${fonts}
