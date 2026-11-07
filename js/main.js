@@ -301,10 +301,68 @@ function seatEl(seat) {
   return $(`#np-${seat}`);
 }
 
+// ---- first-game guide (practice only) ----
+// Nia explains each thing the first time it happens. Ends after the first hand, or on Skip.
+function loadTut() {
+  try { return localStorage.getItem('ronpoker.guide') !== 'done'; } catch { return true; }
+}
+ui.tut = { on: loadTut(), seen: new Set(), current: null };
+
+function endTut() {
+  ui.tut.on = false;
+  ui.tut.current = null;
+  try { localStorage.setItem('ronpoker.guide', 'done'); } catch { /* ignore */ }
+}
+
+function tutTips() {
+  const g = ui.game;
+  const p = ui.pending;
+  const me = g.players[HUMAN];
+  const marks = p?.type === 'discard' && me.hand.some((_, i) => isTenpai(me.hand.filter((__, j) => j !== i)));
+  const riichiSeat = [1, 2, 3].find(s => g.players[s].riichi);
+  return [
+    ['goal', true, {}],
+    ['ron', p?.type === 'ron', {}],
+    ['tsumo', p?.type === 'tsumo', {}],
+    ['riichi', marks && !me.riichi, {}],
+    ['discard', p?.type === 'discard' && !me.riichi, {}],
+    ['oppRiichi', riichiSeat != null, { name: riichiSeat != null ? seatName(riichiSeat) : '' }],
+  ];
+}
+
+function guide() {
+  const g = ui.game;
+  if (!ui.tut.on || ui.chain || !g || g.over) { return ''; }
+  const tips = tutTips();
+  const cur = ui.tut.current && tips.find(([k]) => k === ui.tut.current);
+  // A tip about an action goes away once you have done it.
+  if (cur && !cur[1] && !['goal', 'oppRiichi'].includes(cur[0])) { ui.tut.seen.add(cur[0]); ui.tut.current = null; }
+  const next = tips.find(([k, cond]) => cond && !ui.tut.seen.has(k));
+  // Urgent tips (your turn, a win) replace a waiting one.
+  if (next && (!ui.tut.current || tips.findIndex(([k]) => k === next[0]) < tips.findIndex(([k]) => k === ui.tut.current))) ui.tut.current = next[0];
+  const show = tips.find(([k]) => k === ui.tut.current);
+  if (!show) return '';
+  const fresh = ui.tut.lastShown !== show[0];
+  ui.tut.lastShown = show[0];
+  return `
+    <aside class="guide ${fresh ? 'pop' : ''}" role="note">
+      <img src="${portraitUrl('nia', 'joy')}" alt="" draggable="false">
+      <div>
+        <p class="g-who">${t('guideWho')}</p>
+        <p>${t(`tut.${show[0]}`, show[2])}</p>
+        <div class="g-btns">
+          <button type="button" class="act gold" data-act="tutOk">${t('guideOk')}</button>
+          <button type="button" class="act ghost" data-act="tutSkip">${t('guideSkip')}</button>
+        </div>
+      </div>
+    </aside>`;
+}
+
 async function showResult(record) {
   // let the cut-in and the flying chips play before the result sheet covers the table
   await fx.idle();
   if (record.type !== 'exhausted') await sleep(reduceMotion ? 100 : 900);
+  if (ui.tut.on && !ui.chain) endTut(); // the first hand is the lesson
   return new Promise(resolve => {
     ui.result = record;
     ui.overlay = 'result';
@@ -866,7 +924,8 @@ function myArea() {
       ${drawn ? `<span class="gap"></span>${tile(drawn.c, { size: 'lg', button: discarding, index: drawn.index, selected: ui.selected === drawn.index, mark: discarding && marks[drawn.index], win: winSet, drawnIn: once('drawn') })}` : ''}
       ${ronTile}
     </div>
-    <div class="actions">${actions}${turnClock()}</div>`;
+    <div class="actions">${actions}${turnClock()}</div>
+    ${guide()}`;
 }
 
 // Online only: how long you have left before the referee plays the safe move for you.
@@ -1064,6 +1123,8 @@ function settingsOverlay() {
         <div class="seg">${Object.keys(SPEEDS).map(k => `<button type="button" class="act ${ui.speed === k ? 'gold' : ''}" data-act="setSpeed" data-speed="${k}">${t(`speeds.${k}`)}</button>`).join('')}</div></div>
       <div class="set-row"><span class="label">${t('sound')}</span>
         <div class="seg"><button type="button" class="act ${fx.isMuted() ? '' : 'gold'}" data-act="setSound" data-on="1">ON</button><button type="button" class="act ${fx.isMuted() ? 'gold' : ''}" data-act="setSound" data-on="0">OFF</button></div></div>
+      <div class="set-row"><span class="label">${t('guideSetting')}</span>
+        <div class="seg"><button type="button" class="act ${ui.tut.on ? 'gold' : ''}" data-act="setGuide" data-on="1">ON</button><button type="button" class="act ${ui.tut.on ? '' : 'gold'}" data-act="setGuide" data-on="0">OFF</button></div></div>
       <div class="set-row"><span class="label">${t('music')}</span>
         <div class="seg"><button type="button" class="act ${fx.isMusicOn() ? 'gold' : ''}" data-act="setMusic" data-on="1">ON</button><button type="button" class="act ${fx.isMusicOn() ? '' : 'gold'}" data-act="setMusic" data-on="0">OFF</button></div></div>
       <p class="credits">${t('credits')}</p>
@@ -1203,6 +1264,13 @@ document.addEventListener('click', ev => {
     render();
   }
   if (act === 'setLang') { setLang(ev.target.closest('[data-lang]').dataset.lang); render(); }
+  if (act === 'tutOk') { if (ui.tut.current) ui.tut.seen.add(ui.tut.current); ui.tut.current = null; render(); }
+  if (act === 'tutSkip') { endTut(); render(); }
+  if (act === 'setGuide') {
+    const on = ev.target.closest('[data-on]').dataset.on === '1';
+    if (on) { ui.tut = { on: true, seen: new Set(), current: null }; try { localStorage.removeItem('ronpoker.guide'); } catch { /* ignore */ } } else endTut();
+    render();
+  }
   if (act === 'setMusic') { fx.setMusic(ev.target.closest('[data-on]').dataset.on === '1'); render(); }
   if (act === 'setSound') { fx.setMuted(ev.target.closest('[data-on]').dataset.on !== '1'); if (!fx.isMuted()) fx.sound('coin'); render(); }
   if (act === 'wallet') {

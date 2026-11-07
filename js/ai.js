@@ -90,15 +90,15 @@ function danger(tile, view) {
   return d;
 }
 
-function targetOf(h4) {
-  const waits = waitingCards(h4);
+function targetOf(h4, p = {}) {
+  const waits = waitingCards(h4).filter(w => counts(p, w.ev));
   if (waits.length) return CAT_KEYS[Math.max(...waits.map(w => w.ev.cat))];
   const nat = h4.filter(c => !c.joker);
   const byRank = {};
   const bySuit = {};
   for (const c of nat) { byRank[c.r] = (byRank[c.r] || 0) + 1; bySuit[c.s] = (bySuit[c.s] || 0) + 1; }
   if (Math.max(0, ...Object.values(bySuit)) >= 3) return 'flush';
-  if (Math.max(0, ...Object.values(byRank)) >= 2) return 'trips';
+  if (Math.max(0, ...Object.values(byRank)) >= 2) return (p.minCat || 0) > 3 ? 'fullHouse' : 'trips';
   return 'straight';
 }
 
@@ -166,7 +166,7 @@ export class AIController {
     } else if (hasJoker && !best.tile.joker) {
       this.think('thinkKeepJoker', {});
     } else if (waits.length === 0 && Math.random() < 0.45) {
-      this.think('thinkBuild', { target: targetOf(best.rest) });
+      this.think('thinkBuild', { target: targetOf(best.rest, this.p) });
     }
     return { index: best.index, riichi };
   }
