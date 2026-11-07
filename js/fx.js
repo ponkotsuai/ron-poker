@@ -180,20 +180,56 @@ function noise(ac, { at = 0, dur = 0.08, gain = 0.25, freq = 2000, q = 1 }) {
   src.start(ac.currentTime + at);
 }
 
+// Paper sounds for playing cards: a band of noise whose centre slides, with a soft attack.
+//   sweep  [from, to] Hz of the band-pass centre
+function paper(ac, { at = 0, dur = 0.07, gain = 0.3, sweep = [3000, 1500], q = 0.9, attack = 0.004 }) {
+  const len = Math.max(1, Math.floor(ac.sampleRate * dur));
+  const buf = ac.createBuffer(1, len, ac.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+  const src = ac.createBufferSource();
+  src.buffer = buf;
+  const f = ac.createBiquadFilter();
+  f.type = 'bandpass';
+  f.Q.value = q;
+  const t0 = ac.currentTime + at;
+  f.frequency.setValueAtTime(sweep[0], t0);
+  f.frequency.exponentialRampToValueAtTime(sweep[1], t0 + dur);
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.exponentialRampToValueAtTime(gain, t0 + attack);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+  src.connect(f).connect(g).connect(ac.destination);
+  src.start(t0);
+}
+
+// A card laid on felt: a dull, soft pat.
+function pat(ac, at = 0, gain = 0.45) {
+  paper(ac, { at, dur: 0.06, gain, sweep: [900, 350], q: 0.7, attack: 0.002 });
+  paper(ac, { at, dur: 0.025, gain: gain * 0.25, sweep: [2600, 2000], q: 1.2, attack: 0.001 });
+}
+
 export function sound(name) {
   const ac = audio();
   if (!ac) return;
   switch (name) {
-    case 'tile': // a tile clacking on felt
-      noise(ac, { dur: 0.05, gain: 0.5, freq: 2600, q: 2 });
-      tone(ac, { freq: 900, type: 'triangle', dur: 0.05, gain: 0.08 });
+    case 'tile': // a card thrown face up onto the felt: a short flick, then the pat
+      paper(ac, { dur: 0.05, gain: 0.18, sweep: [5000, 2500], q: 0.8 });
+      pat(ac, 0.04);
       break;
-    case 'draw':
-      noise(ac, { dur: 0.12, gain: 0.15, freq: 5000, q: 0.7 });
+    case 'draw': // a card slid off the pile and turned over
+      paper(ac, { dur: 0.11, gain: 0.16, sweep: [1800, 4500], q: 0.6, attack: 0.02 });
+      paper(ac, { at: 0.1, dur: 0.035, gain: 0.22, sweep: [4000, 2200], q: 1.1 });
       break;
-    case 'deal':
-      for (let i = 0; i < 4; i++) noise(ac, { at: i * 0.07, dur: 0.06, gain: 0.3, freq: 2200 + i * 200, q: 2 });
+    case 'deal': { // a quick riffle shuffle, then four cards dealt
+      for (let i = 0; i < 22; i++) paper(ac, { at: i * 0.018 + Math.random() * 0.006, dur: 0.02, gain: 0.12 + Math.random() * 0.06, sweep: [3800, 2600], q: 1.4, attack: 0.001 });
+      const t0 = 0.5;
+      for (let i = 0; i < 4; i++) {
+        paper(ac, { at: t0 + i * 0.13, dur: 0.08, gain: 0.14, sweep: [2200, 5200], q: 0.6, attack: 0.015 });
+        pat(ac, t0 + i * 0.13 + 0.07, 0.3);
+      }
       break;
+    }
     case 'riichi': // wooden clack + rising tone
       noise(ac, { dur: 0.06, gain: 0.6, freq: 1200, q: 4 });
       tone(ac, { freq: 440, type: 'triangle', at: 0.05, dur: 0.35, gain: 0.18, slide: 880 });

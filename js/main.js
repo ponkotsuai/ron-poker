@@ -1141,7 +1141,7 @@ document.addEventListener('click', ev => {
   if (act === 'payBuyIn') payBuyIn();
   if (['quick', 'createRoom', 'joinRoom', 'startRoom', 'leaveLobby', 'backToLobby'].includes(act)) lobbyAction(act);
   if (act === 'backToIntro') { ui.overlay = 'intro'; render(); }
-  if (act === 'titlePlay') { ui.title = false; ui.overlay = 'intro'; fx.sound('deal'); render(); }
+  if (act === 'titlePlay') { ui.title = false; ui.overlay = 'intro'; fx.sound('draw'); render(); }
   if (act === 'toTitle') { ui.title = true; ui.overlay = null; render(); }
   if (act === 'settings') { ui.overlay = act; render(); }
   if (act === 'ranking') openRanking();
