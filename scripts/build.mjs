@@ -16,7 +16,10 @@ await build({ ...common, format: 'esm', outfile: 'assets/app.js', define: { ...c
 
 // Version the bundle URL so browsers pick up a new build at once.
 const version = createHash('sha256').update(readFileSync('assets/app.js')).digest('hex').slice(0, 10);
-const html = readFileSync('index.html', 'utf8').replace(/src="assets\/app\.js[^"]*"/, `src="assets/app.js?v=${version}"`);
+const cssVersion = createHash('sha256').update(readFileSync('css/style.css')).digest('hex').slice(0, 10);
+const html = readFileSync('index.html', 'utf8')
+  .replace(/src="assets\/app\.js[^"]*"/, `src="assets/app.js?v=${version}"`)
+  .replace(/href="css\/style\.css[^"]*"/, `href="css/style.css?v=${cssVersion}"`);
 writeFileSync('index.html', html);
 const body = html.split('<!--BODY-->')[1].split('<!--/BODY-->')[0];
 const fonts = html.match(/<link rel="stylesheet" href="https:\/\/fonts[^>]+>/)[0];

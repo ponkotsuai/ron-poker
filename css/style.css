@@ -206,21 +206,26 @@ button:focus-visible, .tile:focus-visible { outline: 2px solid var(--gold); outl
 }
 .stick span { width: 8px; height: 8px; border-radius: 50%; background: var(--red); }
 
-/* speech bubbles instead of a log */
+/* speech bubbles instead of a log. They sit over the character's portrait and point at it:
+   above for you and the player on the left, below for the player on the right (the player
+   across sits just above them), to the right for the player across (top edge). */
 .speech {
-  position: absolute; left: 10px; top: calc(100% + 14px); width: max-content; max-width: 300px;
+  --bubble: var(--ivory);
+  position: absolute; left: 4px; bottom: calc(100% + 12px); z-index: 8; width: max-content; max-width: 300px;
   margin: 0; padding: 10px 14px; border-radius: 14px;
-  background: var(--ivory); color: var(--ink); font-size: 16px; font-weight: 500; line-height: 1.4;
+  background: var(--bubble); color: var(--ink); font-size: 16px; font-weight: 500; line-height: 1.4;
   box-shadow: 0 8px 20px rgba(0, 0, 0, 0.45);
   animation: speech 7s ease both;
 }
-.np.s3 .speech { max-width: 280px; }
-.np.s2 .speech { left: calc(100% + 16px); top: 6px; max-width: 200px; }
-.np.s2 .speech::before { left: -9px; top: 18px; border: 10px solid transparent; border-left: 0; border-right-color: var(--ivory); }
 .speech::before {
-  content: ""; position: absolute; left: 26px; top: -9px;
-  border: 10px solid transparent; border-top: 0; border-bottom-color: var(--ivory);
+  content: ""; position: absolute; left: 30px; bottom: -9px;
+  border: 10px solid transparent; border-bottom: 0; border-top-color: var(--bubble);
 }
+.np.s3 .speech { max-width: 290px; }
+.np.s1 .speech { bottom: auto; top: calc(100% + 12px); }
+.np.s1 .speech::before { bottom: auto; top: -9px; border: 10px solid transparent; border-top: 0; border-bottom-color: var(--bubble); }
+.np.s2 .speech { left: calc(100% + 16px); bottom: auto; top: 6px; max-width: 200px; }
+.np.s2 .speech::before { left: -9px; bottom: auto; top: 18px; border: 10px solid transparent; border-left: 0; border-right-color: var(--bubble); }
 .speech.thinking { animation: speech-in 0.2s ease both; padding: 8px 14px; }
 .speech.thinking .dots i { background: var(--ink); }
 
@@ -642,6 +647,4 @@ button.tile.selected { transform: translateY(-12px); box-shadow: 0 calc(var(--w)
 }
 .chat-form input:focus { outline: 2px solid var(--gold); outline-offset: 1px; }
 .chat-form .act { min-height: 46px; padding: 0 18px; font-size: 17px; }
-.speech.chat { background: #fff3c4; box-shadow: 0 0 0 2px var(--gold), 0 8px 20px rgba(0, 0, 0, 0.45); font-weight: 700; }
-.np.s0 .speech { top: auto; bottom: calc(100% + 14px); }
-.np.s0 .speech::before { top: auto; bottom: -9px; border: 10px solid transparent; border-bottom: 0; border-top-color: #fff3c4; }
+.speech.chat { --bubble: #fff3c4; box-shadow: 0 0 0 2px var(--gold), 0 8px 20px rgba(0, 0, 0, 0.45); font-weight: 700; }
