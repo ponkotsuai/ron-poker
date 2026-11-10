@@ -38,7 +38,10 @@ const AI_TOP_UP = 6n * NEAR;
 const DECISION_MS = { discard: 25_000, tsumo: 12_000, ron: 12_000 };
 const RESULT_MS = 25_000; // how long the hand result stays up if a human does not press next
 const QUEUE_MS = Number(process.env.QUEUE_MS || 15_000); // random match: wait this long for people, then fill with AIs
-const PAY_MS = Number(process.env.PAY_MS || 120_000); // every human must pay the buy-in within this time
+const PAY_MS = Number(process.env.PAY_MS || 180_000); // every human must pay the buy-in within this time
+// A phone puts the browser to sleep when you switch apps (to send the room code, or to approve
+// in the wallet). Someone who drops out of a room or an unpaid table keeps their place this long.
+const AWAY_MS = 5 * 60_000;
 const ROOM_IDLE_MS = 15 * 60_000;
 const AI_DELAY = process.env.FAST ? { discard: 0, tsumo: 0, ron: 0, auto: 0 } : { discard: 1300, tsumo: 800, ron: 800, auto: 1000 };
 
@@ -123,6 +126,7 @@ class Player {
     this.room = null;
     this.seat = null;
     this.inQueue = false;
+    this.awaySince = null;
   }
   send(msg) { if (this.ws && this.ws.readyState === 1) this.ws.send(JSON.stringify(msg)); }
   connected() { return !!this.ws && this.ws.readyState === 1; }
@@ -186,11 +190,13 @@ class Room {
     rooms.set(this.code, this);
   }
   broadcast() {
-    this.members = this.members.filter(m => m.connected());
+    const gone = this.members.filter(m => !m.connected() && Date.now() - (m.awaySince || 0) > AWAY_MS);
+    gone.forEach(m => { m.room = null; });
+    this.members = this.members.filter(m => !gone.includes(m));
     if (!this.members.length) { rooms.delete(this.code); return; }
     if (!this.members.includes(this.host)) this.host = this.members[0];
     for (const m of this.members) {
-      m.send({ t: 'lobby', mode: 'room', code: this.code, host: m === this.host, members: this.members.map(x => x.name) });
+      m.send({ t: 'lobby', mode: 'room', code: this.code, host: m === this.host, members: this.members.map(x => x.name), away: this.members.map(x => !x.connected()) });
     }
   }
 }
@@ -206,7 +212,7 @@ function joinRoom(p, code) {
   if (p.table || p.room || p.inQueue) throw new Error('already waiting or playing');
   const r = rooms.get(String(code || '').toUpperCase().trim());
   if (!r) throw new Error('room not found');
-  r.members = r.members.filter(m => m.connected());
+  r.members = r.members.filter(m => m.connected() || Date.now() - (m.awaySince || 0) <= AWAY_MS);
   if (r.members.length >= 4) throw new Error('room is full');
   if (r.members.some(m => m.account === p.account)) throw new Error('this account is already in the room');
   r.members.push(p);
@@ -227,12 +233,28 @@ function startRoom(p) {
   const r = p.room;
   if (!r || r.host !== p) throw new Error('only the host can start');
   const humans = r.members.filter(m => m.connected());
+  r.members.filter(m => !humans.includes(m)).forEach(m => { m.room = null; });
   rooms.delete(r.code);
   humans.forEach(m => { m.room = null; m.send({ t: 'lobby', mode: 'starting', members: humans.map(h => h.name) }); });
   startTable(humans).catch(e => humans.forEach(m => m.send({ t: 'error', message: String(e.message || e) })));
 }
 
+// Someone who dropped out is still in this room or unpaid table; give them their place back.
+function findAway(account) {
+  for (const r of rooms.values()) {
+    const m = r.members.find(x => x.account === account && !x.connected());
+    if (m) return m;
+  }
+  for (const t of tables.values()) {
+    if (t.closed || t.started) continue;
+    const m = t.humans.find(x => x.account === account && !x.connected());
+    if (m) return m;
+  }
+  return null;
+}
+
 setInterval(() => {
+  for (const r of rooms.values()) if (r.members.some(m => !m.connected())) r.broadcast();
   for (const [code, r] of rooms) if (Date.now() - r.touched > ROOM_IDLE_MS) { rooms.delete(code); r.members.forEach(m => { m.room = null; m.send({ t: 'lobby', mode: 'closed' }); }); }
 }, 60_000);
 
@@ -268,6 +290,10 @@ class Table {
     ];
   }
 
+  sendOpened(p) {
+    p.send({ t: 'opened', tableId: this.id, seat: p.seat, seats: this.seatInfo(), seedHash: this.seed.hash, paid: this.paidSeats.has(p.seat) });
+  }
+
   broadcast(msg) { this.humans.forEach(p => p.send(msg)); }
   step(key, params = {}) { this.broadcast({ t: 'step', key, params }); }
   anyoneHere() { return this.humans.some(p => p.connected()); }
@@ -288,8 +314,9 @@ class Table {
     const r = await call(ref, CONTRACT_ID, 'create_table', { players: seats.map(s => s.account), seed_hash: hash });
     this.id = r.value;
     tables.set(this.id, this);
+    this.openedHash = r.hash;
     this.step('chainTableOpened', { id: this.id, hash: r.hash });
-    for (const p of this.humans) p.send({ t: 'opened', tableId: this.id, seat: p.seat, seats, seedHash: hash });
+    for (const p of this.humans) this.sendOpened(p);
     this.payTimer = setTimeout(() => this.abort('notEveryonePaid'), PAY_MS);
     console.log(`table ${this.id} opened in ${Date.now() - t0} ms for ${this.humans.length} human(s)`);
     status.lastOpenMs = Date.now() - t0;
@@ -574,11 +601,18 @@ wss.on('connection', (ws, req) => {
         if (!status.ready) await bootstrap();
         if (!status.ready) throw new Error(`referee not ready: ${status.error}`);
         if (typeof msg.account !== 'string' || !/^[a-z0-9._-]{2,64}$/.test(msg.account)) throw new Error('bad account');
+        const back = findAway(msg.account);
+        if (back) { back.ws = ws; back.awaySince = null; player = back; }
         player.account = msg.account;
         player.nickname = cleanNickname(msg.nickname);
         player.character = Object.hasOwn(CHARACTERS, msg.character) ? msg.character : null;
         if (player.nickname) nicknames.set(player.account, player.nickname);
-        player.send({ t: 'hello', referee: referee.accountId, contract: CONTRACT_ID, agents: Object.fromEntries(Object.values(agents).map(a => [a.id, a.accountId])) });
+        player.send({
+          t: 'hello', referee: referee.accountId, contract: CONTRACT_ID, agents: Object.fromEntries(Object.values(agents).map(a => [a.id, a.accountId])),
+          restored: back ? (back.room ? 'room' : back.table ? 'table' : null) : null,
+        });
+        if (back?.room) back.room.broadcast();
+        if (back?.table && !back.table.closed) back.table.sendOpened(back);
       } else if (msg.t === 'resume') {
         const t = tables.get(msg.tableId);
         if (!t || t.closed) throw new Error('no game to resume');
@@ -617,8 +651,10 @@ wss.on('connection', (ws, req) => {
     }
   });
   ws.on('close', () => {
+    if (player.ws !== ws) return; // this player already came back on a new connection
+    player.awaySince = Date.now();
     if (player.inQueue) leaveQueue(player);
-    if (player.room) leaveRoom(player);
+    if (player.room) player.room.broadcast();
     // A game keeps going: the absent player's moves are played safely and the table still settles.
     if (player.table && player.ws === ws) player.table.dropped(player);
   });

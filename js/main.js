@@ -466,9 +466,14 @@ function onRefereeMessage(m, state) {
   switch (m.t) {
     case 'hello':
       c.agents = m.agents;
-      c.phase = 'lobby';
       c.busy = false;
-      c.lobby = { mode: 'idle' };
+      if (c.phase === 'needPay' || c.phase === 'joining') {
+        // Back from the background: the referee sends the table again if it is still open.
+        if (m.restored !== 'table') { c.phase = 'lobby'; c.lobby = { mode: 'idle' }; c.tableId = null; c.session = null; c.error = t('tableGone'); }
+      } else {
+        c.phase = 'lobby';
+        if (m.restored !== 'room') c.lobby = { mode: 'idle' };
+      }
       refreshBankrolls();
       render();
       break;
@@ -481,16 +486,26 @@ function onRefereeMessage(m, state) {
       chainStep(m.key, m.params);
       if (m.key === 'chainGameOn') refreshBankrolls();
       break;
-    case 'opened':
+    case 'opened': {
       refreshBankrolls();
+      const again = c.tableId === m.tableId;
       c.tableId = m.tableId;
       c.you = m.seat;
       ui.seats = rotate(m.seats);
+      c.lobby = null;
+      if (again && c.session) {
+        // We paid while the connection was down: tell the referee now.
+        c.phase = 'joining';
+        if (!m.paid) c.conn.send({ t: 'paid', ...chain.signSeat(c.session, c.tableId, c.human) });
+        render();
+        break;
+      }
+      if (again && c.phase === 'joining') { render(); break; } // still in the wallet
       c.phase = 'needPay';
       c.busy = false;
-      c.lobby = null;
-      chainStep('chainHumanPay');
+      if (!again) chainStep('chainHumanPay'); else render();
       break;
+    }
     case 'state':
       ui.game = mirrorGame(m.game);
       if (c.phase !== 'playing' && !m.game.over) { c.phase = 'playing'; ui.overlay = null; }
@@ -558,20 +573,49 @@ function onRefereeMessage(m, state) {
   }
 }
 
+// Phones suspend a page in the background (switching to a chat app to send the room code, or
+// to the wallet to pay), which drops the connection. Reconnect as soon as the page is back:
+// the referee keeps your room, your unpaid seat and your game for a while.
 function onRefereeClose(state) {
   const c = ui.chain;
-  if (!c || c !== state || c.phase === 'settled' || c.phase === 'aborted' || c.closing) return;
-  if (c.phase === 'playing' && c.session && c.tableId != null) {
-    // Reconnect and pick the game up where it is. Until then the referee plays safe moves for you.
-    setTimeout(() => {
-      c.conn = listen(c);
-      c.conn.ready.then(() => c.conn.send({ t: 'resume', tableId: c.tableId, account: c.human, ...chain.signSeat(c.session, c.tableId, c.human) }))
-        .catch(chainFail);
-    }, 1500);
-  } else {
-    chainFail(new Error(t('refereeLost')));
-  }
+  if (!c || c !== state || c.phase === 'settled' || c.phase === 'aborted' || c.closing || c.phase === 'connecting') return;
+  c.offline = true;
+  c.tries = 0;
+  render();
+  setTimeout(() => reconnect(c), 800);
 }
+
+function reconnect(c) {
+  if (ui.chain !== c || c.closing || !c.offline || c.reconnecting) return;
+  if (document.visibilityState === 'hidden') return; // tried again when the page is shown
+  c.reconnecting = true;
+  const conn = listen(c);
+  conn.ready.then(() => {
+    c.conn = conn;
+    c.offline = false;
+    c.reconnecting = false;
+    if (c.phase === 'playing' && c.session && c.tableId != null) {
+      // Pick the game up where it is. Meanwhile the referee has played safe moves for you.
+      conn.send({ t: 'resume', tableId: c.tableId, account: c.human, ...chain.signSeat(c.session, c.tableId, c.human) });
+    } else {
+      conn.send({ t: 'hello', account: c.human, nickname: ui.nick, character: ui.char });
+    }
+    render();
+  }).catch(() => {
+    c.reconnecting = false;
+    c.tries = (c.tries || 0) + 1;
+    if (c.tries > 20) { c.offline = false; chainFail(new Error(t('refereeLost'))); return; }
+    render();
+    setTimeout(() => reconnect(c), Math.min(8000, 1000 * c.tries));
+  });
+}
+
+document.addEventListener('visibilitychange', () => {
+  const c = ui.chain;
+  if (document.visibilityState !== 'visible' || !c) return;
+  if (c.offline) reconnect(c);
+  else if (c.conn && c.conn.ws.readyState > 1) onRefereeClose(c);
+});
 
 // Step 1 (click): connect the wallet and reach the referee's lobby.
 async function startChainGame() {
@@ -596,6 +640,7 @@ async function startChainGame() {
 // Step 2: find a table, either by random match or in a room with friends.
 function lobbyAction(act) {
   const c = ui.chain;
+  if (c?.offline) { reconnect(c); return; }
   if (!c?.conn || c.conn.ws.readyState !== 1) { startChainGame(); return; }
   c.error = null;
   if (act === 'quick') c.conn.send({ t: 'quick' });
@@ -663,7 +708,7 @@ function chainSteps() {
 function lobbyPanel() {
   const c = ui.chain;
   const l = c.lobby || { mode: 'idle' };
-  const members = list => `<ul class="members">${list.map(n => `<li>${escapeHtml(n)}</li>`).join('')}${Array.from({ length: 4 - list.length }, () => `<li class="empty">${t('emptySeat')}</li>`).join('')}</ul>`;
+  const members = (list, away = []) => `<ul class="members">${list.map((n, i) => `<li class="${away[i] ? 'away' : ''}">${escapeHtml(n)}${away[i] ? ` <small>${t('memberAway')}</small>` : ''}</li>`).join('')}${Array.from({ length: 4 - list.length }, () => `<li class="empty">${t('emptySeat')}</li>`).join('')}</ul>`;
   if (l.mode === 'queue') {
     return `<div class="lobby">
       <p>${t('queueWaiting', { seconds: l.seconds })}</p>
@@ -682,8 +727,12 @@ function lobbyPanel() {
     return `<div class="lobby">
       <p class="label">${t('roomCode')}</p>
       <p class="code" aria-label="${t('roomCode')}">${escapeHtml(l.code)}</p>
-      <p class="note">${t('roomShare')}</p>
-      ${members(l.members)}
+      <div class="row share-row">
+        <button type="button" class="act" data-act="copyCode">${c.copied ? t('copied') : t('copyCode')}</button>
+        ${navigator.share ? `<button type="button" class="act" data-act="shareCode">${t('shareCode')}</button>` : ''}
+      </div>
+      <p class="note">${t('roomShare')} ${t('roomStays')}</p>
+      ${members(l.members, l.away)}
       <div class="row">
         ${l.host ? `<button type="button" class="act gold primary" data-act="startRoom">${t('startRoom', { n: l.members.length })}</button>` : `<p class="note">${t('waitHost')}</p>`}
         <button type="button" class="act" data-act="leaveLobby">${t('leaveRoom')}</button>
@@ -712,6 +761,7 @@ function chainOverlay() {
     <div class="sheet chain">
       <p class="eyebrow">NEAR testnet · <a href="${chain.explorerAccount(chain.CONTRACT_ID)}" target="_blank" rel="noopener">${chain.CONTRACT_ID}</a></p>
       <h2>${c.phase === 'lobby' ? t('lobbyTitle') : t('chainTitle')}</h2>
+      ${c.offline ? `<p class="offline"><span class="dots"><i></i><i></i><i></i></span> ${t('reconnecting')}</p>` : ''}
       ${c.phase === 'lobby' ? lobbyPanel() : ''}
       ${c.phase === 'needPay' || c.phase === 'joining' ? `<p class="note">${t('tableSeats')}: ${[0, 1, 2, 3].map(seatName).join(' · ')}</p>` : ''}
       ${showSteps ? chainSteps() : c.error ? `<p class="error">${t('chainError', { msg: escapeHtml(c.error) })}</p>` : ''}
@@ -1264,6 +1314,17 @@ document.addEventListener('click', ev => {
     render();
   }
   if (act === 'setLang') { setLang(ev.target.closest('[data-lang]').dataset.lang); render(); }
+  if (act === 'copyCode' || act === 'shareCode') {
+    const code = ui.chain?.lobby?.code;
+    if (code) {
+      const text = t('shareText', { code, url: LIVE_URL });
+      if (act === 'shareCode' && navigator.share) navigator.share({ title: 'Ron Poker', text }).catch(() => {});
+      else {
+        const done = () => { ui.chain.copied = true; render(); setTimeout(() => { if (ui.chain) { ui.chain.copied = false; render(); } }, 1800); };
+        (navigator.clipboard?.writeText(text) || Promise.reject()).then(done).catch(() => { window.prompt?.(t('copyCode'), text); });
+      }
+    }
+  }
   if (act === 'tutOk') { if (ui.tut.current) ui.tut.seen.add(ui.tut.current); ui.tut.current = null; render(); }
   if (act === 'tutSkip') { endTut(); render(); }
   if (act === 'setGuide') {

@@ -616,3 +616,8 @@ button.tile.selected { transform: translateY(-12px); box-shadow: 0 calc(var(--w)
 .guide .act { min-height: 38px; font-size: 15px; }
 .guide .act.ghost { border-color: rgba(0, 0, 0, 0.25); color: #4a4436; }
 @keyframes guide-in { from { opacity: 0; transform: translateY(10px) scale(0.96); } to { opacity: 1; transform: none; } }
+
+.members li.away { opacity: 0.6; }
+.members li small { color: var(--muted); font-size: 0.75em; }
+.share-row { margin-top: -6px; }
+.offline { margin: 0; padding: 8px 12px; border-radius: 10px; background: rgba(224, 176, 74, 0.12); border: 1px solid var(--gold-deep); color: var(--gold); font-size: 0.9rem; }
