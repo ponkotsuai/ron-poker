@@ -83,7 +83,7 @@ function danger(tile, view) {
   if (tile.joker) return 0;
   let d = 0;
   for (const p of view.players) {
-    if (p.seat === view.seat || !p.riichi) continue;
+    if (p.seat === view.seat || !p.riichi || p.folded) continue;
     if (discardedRanks(p.discards).has(tile.r)) continue; // furiten: safe
     d += 0.15 * 6; // ~15% hit chance, ~6 points lost on an average ron
   }
@@ -133,7 +133,8 @@ export class AIController {
     const drawsLeft = Math.floor(view.wallCount / 4) + 1;
     const cache = new Map();
     const hasJoker = hand.some(c => c.joker);
-    const threatened = view.players.some(p => p.seat !== view.seat && p.riichi);
+    const threatened = view.players.some(p => p.seat !== view.seat && p.riichi && !p.folded);
+    const threats = view.players.filter(p => p.seat !== view.seat && p.riichi && !p.folded).length;
 
     const options = hand.map((tile, index) => {
       const rest = hand.filter((_, i) => i !== index);
@@ -153,9 +154,20 @@ export class AIController {
 
     // Riichi when ready, unless a greedy player is holding out for a bigger hand early on.
     const waits = waitingCards(best.rest, unseen).filter(w => counts(this.p, w.ev));
-    let riichi = waits.length > 0;
+    let riichi = waits.length > 0 && view.canRiichi !== false;
     const topWait = waits.reduce((m, w) => Math.max(m, w.ev.points), 0);
     if (riichi && t.greed > 1.3 && topWait <= 1 && view.wallCount > 22 && !this.p.ronOnly) riichi = false;
+
+    // Fold when someone has declared riichi, the hand is not ready, and even the safest card is
+    // likely to cost more than the 1-point fee plus what this hand could still win.
+    if (view.canFold && threats && !waits.length) {
+      const safest = Math.min(...options.map(o => o.danger));
+      const expectedLoss = t.risk * safest * (1 + 0.5 * (threats - 1));
+      if (safest > 0 && expectedLoss > best.value + 0.6) {
+        this.think('thinkFold', {});
+        return { fold: true };
+      }
+    }
 
     if (riichi) {
       this.think('thinkRiichi', { waits: new Set(waits.map(w => w.card.r)).size, points: topWait });

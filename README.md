@@ -26,10 +26,12 @@ Four players draw and discard like in mahjong, but the winning hand is a poker h
 2. When the gold light in the centre panel points at you, you have drawn a fifth card. Click a card, then **Discard** (or double-click it).
    → The card drops into your discard row. A card marked **R** means you would be one card from winning without it.
 3. Pick an **R** card and press **Riichi + discard**.
-   → A red brush-stroke "リーチ" cut-in plays and a riichi stick appears under your nameplate. Your hand is now locked.
-4. Keep going until someone wins.
+   → A red brush-stroke "リーチ" cut-in plays, a riichi stick appears under your nameplate and 1 point moves into the **Pot** in the centre panel. Your hand is now locked.
+4. When an opponent declares riichi, a **Fold (1 pt)** button appears above Discard. Tap it twice to sit the hand out.
+   → Your nameplate turns grey with a FOLD tag. Nobody can ron you this hand.
+5. Keep going until someone wins.
    → A "ロン" or "ツモ" cut-in, chips fly to the winner, and the result sheet shows the hand, its points and everyone's change.
-5. Watch the opponents' speech bubbles.
+6. Watch the opponents' speech bubbles.
    → They explain their decisions, for example "Riichi on the table. The joker is my safe throw."
 
 The language switch (English / 日本語) is under **Settings** on the title screen, and at the top right of the menu and the table.
@@ -134,7 +136,9 @@ sequenceDiagram
 ## Rules in short
 
 - 52 cards + 2 jokers. Everyone holds 4 cards. On your turn draw 1; with 5 cards you need **Three of a Kind or better** to win.
-- **Riichi**: when your 4 cards are one card from winning you may declare it. Your hand locks. Only riichi players can **ron** (win off a discard); anyone can **tsumo** (win on their own draw).
+- **Riichi**: when your 4 cards are one card from winning you may declare it and put 1 point in the pot. Your hand locks. Only riichi players can **ron** (win off a discard); anyone can **tsumo** (win on their own draw).
+- **Fold**: once someone else has declared riichi, you may fold on your turn for 1 point. You can no longer win and nobody can ron you, but you still pay on a tsumo. If everyone else folds, the last player in wins the hand.
+- **The pot**: riichi bets and fold fees go to whoever wins the hand. If nobody wins, everyone gets back what they put in.
 - **Furiten**: you cannot ron on a rank you have already thrown this hand.
 - **Jokers** are not wild. A winning hand with a joker scores ×2 (two jokers ×4), and nobody can ron on a joker, so it is also a safe throw.
 - Ron: the thrower pays points ×3. Tsumo: the other three pay points ×1 each.

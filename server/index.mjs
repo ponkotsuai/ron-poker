@@ -382,6 +382,7 @@ class Table {
     const w = this.waiting.get(p.seat);
     if (!w || w.kind !== kind) return;
     if (kind === 'discard') {
+      if (value && value.fold === true) { w.resolve({ fold: true }); return; }
       const n = this.game.players[p.seat].hand.length;
       if (!value || !Number.isInteger(value.index) || value.index < 0 || value.index >= n) return;
       w.resolve({ index: value.index, riichi: !!value.riichi });
@@ -403,9 +404,9 @@ class Table {
       t: 'state',
       game: {
         you: p.seat, handNo: g.handNo, totalHands: g.totalHands, dealer: g.dealer, turn: g.turn, wallCount: g.wall.length,
-        points: g.points, over: g.over, seedHash: this.seed.hash,
+        points: g.points, over: g.over, seedHash: this.seed.hash, pot: g.potTotal(),
         players: g.players.map(pl => ({
-          seat: pl.seat, discards: pl.discards, riichi: pl.riichi, riichiAt: pl.riichiAt,
+          seat: pl.seat, discards: pl.discards, riichi: pl.riichi, riichiAt: pl.riichiAt, folded: pl.folded,
           handCount: pl.hand.length, hand: pl.seat === p.seat ? pl.hand : null,
         })),
       },

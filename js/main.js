@@ -1,6 +1,6 @@
 // Browser UI: one human seat against three AI seats.
 
-import { Game } from './game.js';
+import { Game, RIICHI_MIN } from './game.js';
 import { AIController, PERSONALITIES, moodOf } from './ai.js';
 import { isTenpai, BASE_POINTS, CAT_KEYS, START_POINTS } from './engine.js';
 import { t, getLang, setLang } from './i18n.js';
@@ -255,7 +255,9 @@ function onEvent(type, e) {
     fx.sound('tile');
     if (e.riichi) {
       setOnce('stick', e.seat);
+      setOnce('pot', true);
       setExpr(e.seat, 'fun');
+      fx.idle().then(() => fx.coins(seatEl(e.seat), $('.compass'), 1));
       fx.sound('riichi');
       fx.voice(seatChar(e.seat), 'riichi');
       fx.cutIn('riichi', { title: 'リーチ', kanji: '立直', who: seatName(e.seat), portrait: portraitImg(e.seat, 'fun') });
@@ -282,9 +284,25 @@ function onEvent(type, e) {
     // chips fly from whoever paid to the winner once the cut-in clears
     fx.idle().then(() => {
       for (const x of e.transfers || []) fx.coins(seatEl(x.from), seatEl(x.to), x.amount);
+      if (e.potWon) fx.coins($('.compass'), seatEl(e.winner), e.potWon);
     });
     if (e.type === 'ron') pushLog(t('logRon', { ...params, loser: seatName(e.loser) }), 'win');
     else pushLog(t('logTsumo', params), 'win');
+  }
+  if (type === 'fold') {
+    setOnce('pot', true);
+    setExpr(e.seat, 'sad', 4000);
+    fx.sound('coin');
+    fx.coins(seatEl(e.seat), $('.compass'), e.amount || 1);
+    fx.banner(t('foldBanner', { name: seatName(e.seat) }), t('foldBannerSub'));
+    pushLog(t('logFold', { name: seatName(e.seat) }), '');
+  }
+  if (type === 'foldWin') {
+    setExpr(e.winner, 'joy', 7000);
+    fx.sound('gameEnd');
+    fx.banner(t('foldWinBanner'), t('foldWinSub', { name: seatName(e.winner), n: e.potWon }));
+    fx.coins($('.compass'), seatEl(e.winner), e.potWon);
+    pushLog(t('foldWinSub', { name: seatName(e.winner), n: e.potWon }), 'win');
   }
   if (type === 'exhausted') {
     pushLog(t('logExhausted'), 'sep');
@@ -436,12 +454,14 @@ function localRecord(r) {
     ...r,
     winner: toLocal(r.winner), loser: toLocal(r.loser), points: rotate(r.points),
     transfers: (r.transfers || []).map(x => ({ ...x, from: toLocal(x.from), to: toLocal(x.to) })),
+    potFrom: (r.potFrom || []).map(x => ({ ...x, from: toLocal(x.from) })),
+    refunds: (r.refunds || []).map(x => ({ ...x, to: toLocal(x.to) })),
   };
 }
 function localEvent(type, e) {
   if (type === 'handStart') return { ...e, dealer: toLocal(e.dealer) };
-  if (type === 'draw' || type === 'discard') return { ...e, seat: toLocal(e.seat) };
-  if (type === 'win' || type === 'exhausted') return localRecord(e);
+  if (type === 'draw' || type === 'discard' || type === 'fold') return { ...e, seat: toLocal(e.seat) };
+  if (type === 'win' || type === 'exhausted' || type === 'foldWin') return localRecord(e);
   if (type === 'gameEnd') return { ...e, points: rotate(e.points) };
   return e;
 }
@@ -451,7 +471,7 @@ function mirrorGame(s) {
   return {
     remote: true,
     handNo: s.handNo, totalHands: s.totalHands, dealer: toLocal(s.dealer), turn: toLocal(s.turn), over: s.over,
-    points: rotate(s.points), wall: { length: s.wallCount }, seed: s.seedHash,
+    points: rotate(s.points), wall: { length: s.wallCount }, seed: s.seedHash, pot: s.pot || 0,
     players: rotate(s.players).map(p => ({ ...p, seat: toLocal(p.seat), hand: p.hand || Array.from({ length: p.handCount }, () => null) })),
   };
 }
@@ -839,7 +859,7 @@ function river(p, seat, turn) {
 }
 
 function backs(p, seat) {
-  return `<div class="backs" style="${around(seat, 220, seat === 2 ? 234 : 244)}" aria-hidden="true">${p.hand.map(() => tile(null, { back: true, size: 'bk' })).join('')}</div>`;
+  return `<div class="backs ${p.folded ? 'folded' : ''}" style="${around(seat, 220, seat === 2 ? 234 : 244)}" aria-hidden="true">${p.hand.map(() => tile(null, { back: true, size: 'bk' })).join('')}</div>`;
 }
 
 function riichiStick(on, seat) {
@@ -906,7 +926,7 @@ function nameplate(seat) {
   const sub = seat === HUMAN ? charName(ui.char) : isAI ? charStyle(info.character || info.id) : info.character ? charName(info.character) : t('humanTag');
   const { left, top } = PLATE[seat];
   return `
-    <section class="np s${seat} ${active ? 'active' : ''} ${p.riichi ? 'in-riichi' : ''} ${ui.pending?.type === 'ron' && ui.pending.from === seat ? 'ron-from' : ''}" id="np-${seat}" style="left:${left}px;top:${top}px" aria-label="${seatName(seat)}">
+    <section class="np s${seat} ${active ? 'active' : ''} ${p.riichi ? 'in-riichi' : ''} ${p.folded ? 'folded' : ''} ${ui.pending?.type === 'ron' && ui.pending.from === seat ? 'ron-from' : ''}" id="np-${seat}" style="left:${left}px;top:${top}px" aria-label="${seatName(seat)}">
       <span class="avatar ${isAI ? '' : 'human'}">${avatar(seat)}</span>
       <div class="np-body">
         <p class="np-name"><span class="nm">${seatName(seat)}</span>${dealer ? `<span class="dealer">${t('dealer')}</span>` : ''}</p>
@@ -924,6 +944,7 @@ function compass() {
   const total = g ? g.totalHands : 8;
   const handNo = g ? Math.min(g.handNo + 1, total) : 1;
   const wall = g ? g.wall.length : 38;
+  const pot = !g ? 0 : typeof g.potTotal === 'function' ? g.potTotal() : g.pot || 0; // points bet this hand
   const turnSeat = g && !g.over ? g.turn : null;
   const pips = Array.from({ length: total }, (_, i) => `<i class="${i < handNo - 1 ? 'done' : i === handNo - 1 ? 'now' : ''}"></i>`).join('');
   const edges = [0, 1, 2, 3].map(seat => `
@@ -938,8 +959,15 @@ function compass() {
         <span class="c-hand">${t('handBanner', { n: handNo })}</span>
         <span class="pips" aria-hidden="true">${pips}</span>
         <span class="c-wall"><span class="stack" aria-hidden="true"><i></i><i></i><i></i></span>${t('left', { n: wall })}</span>
+        ${pot ? `<span class="c-pot ${once('pot') ? 'bump' : ''}" title="${t('potTitle')}"><i class="chip-ico" aria-hidden="true"></i>${t('pot', { n: pot })}</span>` : ''}
       </div>
     </div>`;
+}
+
+// Fold: open once someone else has declared riichi, unless you declared yourself.
+function canFoldNow(g) {
+  const me = g.players[HUMAN];
+  return !me.riichi && !me.folded && g.points[HUMAN] > 0 && g.players.some(o => o.seat !== HUMAN && o.riichi && !o.folded);
 }
 
 function statusText() {
@@ -948,6 +976,7 @@ function statusText() {
   if (ui.pending?.type === 'discard') return ui.selected != null ? t('selected', { card: cardLabel(g.players[HUMAN].hand[ui.selected]) }) : t('pickTile');
   if (ui.pending?.type === 'tsumo') return t('canTsumo', { hand: t(`hands.${ui.pending.ev.key}`), points: ui.pending.ev.points });
   if (ui.pending?.type === 'ron') return t('canRon', { name: seatName(ui.pending.from), card: cardLabel(ui.pending.tile), hand: t(`hands.${ui.pending.ev.key}`), points: ui.pending.ev.points });
+  if (g.players[HUMAN].folded) return t('youFolded');
   if (g.players[HUMAN].riichi && g.turn === HUMAN) return t('riichiLocked');
   if (ui.thinking != null) return t('waitingFor', { name: seatName(ui.thinking) });
   return '';
@@ -991,10 +1020,14 @@ function myArea() {
   let actions = '';
   if (discarding) {
     const sel = ui.selected;
-    const canRiichi = sel != null && marks[sel];
+    const enough = g.points[HUMAN] >= RIICHI_MIN;
+    const canRiichi = sel != null && marks[sel] && enough;
+    const fold = canFoldNow(g)
+      ? `<button type="button" class="act big fold ${ui.foldArmed ? 'armed' : ''}" data-act="fold">${ui.foldArmed ? t('foldConfirm') : t('fold')}</button>` : '';
     actions = `
+      ${fold}
       <button type="button" class="act big" data-act="discard" ${sel == null ? 'disabled' : ''}>${t('discard')}</button>
-      <button type="button" class="act big gold" data-act="riichi" ${canRiichi ? '' : 'disabled'}>${t('riichiDiscard')}</button>`;
+      <button type="button" class="act big gold" data-act="riichi" ${canRiichi ? '' : 'disabled'} title="${enough ? t('riichiBetHint') : t('riichiNeedPoints')}">${t('riichiDiscard')}</button>`;
   } else if (pending?.type === 'tsumo') {
     actions = `
       ${me.riichi ? '' : `<button type="button" class="act big" data-act="no">${t('keepGoing')}</button>`}
@@ -1008,7 +1041,7 @@ function myArea() {
   const status = statusText();
   return `
     ${status ? `<p class="status" role="status">${status}</p>` : '<p class="status empty" role="status"></p>'}
-    <div class="hand ${once('deal') ? 'deal' : ''} ${g && !g.over && g.turn === HUMAN ? 'my-turn' : ''}" role="group" aria-label="hand">
+    <div class="hand ${once('deal') ? 'deal' : ''} ${g && !g.over && g.turn === HUMAN ? 'my-turn' : ''} ${me.folded ? 'me-folded' : ''}" role="group" aria-label="hand">
       ${hand.map(render1).join('')}
       ${drawn ? `<span class="gap"></span>${tile(drawn.c, { size: 'lg', button: discarding, index: drawn.index, selected: ui.selected === drawn.index, mark: discarding && marks[drawn.index], win: winSet, drawnIn: once('drawn') })}` : ''}
       ${ronTile}
@@ -1118,7 +1151,11 @@ function resultOverlay() {
   const g = ui.game;
   if (r.type === 'exhausted') {
     return `<div class="sheet result"><p class="eyebrow">${t('hand')} ${r.handNo + 1}</p><h2>${t('resultExhausted')}</h2>
-      <p>${t('logExhausted')}</p><ul class="standings">${standings(g.points, 'hand', handDeltas(r))}</ul><div class="row"><button type="button" class="act gold primary" data-act="next">${t('nextHand')}</button></div></div>`;
+      <p>${t('logExhausted')}${(r.refunds || []).some(x => x.amount) ? ` ${t('potRefunded')}` : ''}</p><ul class="standings">${standings(g.points, 'hand', handDeltas(r))}</ul><div class="row"><button type="button" class="act gold primary" data-act="next">${t('nextHand')}</button></div></div>`;
+  }
+  if (r.type === 'foldWin') {
+    return `<div class="sheet result"><p class="eyebrow">${t('hand')} ${r.handNo + 1} · ${t('foldWinBanner')}</p><h2>${t('foldWinSub', { name: seatName(r.winner), n: r.potWon })}</h2>
+      <p>${t('foldWinWhy')}</p><ul class="standings">${standings(g.points, 'hand', handDeltas(r))}</ul><div class="row"><button type="button" class="act gold primary" data-act="next">${t('nextHand')}</button></div></div>`;
   }
   const lines = r.transfers.filter(x => x.amount > 0).map(x => `<li>${t('paid', { from: seatName(x.from), to: seatName(x.to), amount: x.amount })}</li>`).join('');
   return `
@@ -1128,15 +1165,18 @@ function resultOverlay() {
       <div class="hand show">${r.hand.map(c => tile(c, { size: 'md', win: true })).join('')}</div>
       <p class="calc"><span>${r.ev.base}</span>${r.ev.jokers ? ` × <span class="gold-text">${t('jokerBonus', { mult: r.ev.mult })}</span>` : ''}
         ${r.type === 'ron' ? ' × 3' : ''} = <b>${r.ev.points * (r.type === 'ron' ? 3 : 1)}${t('pts')}</b>${r.type === 'tsumo' ? ` <small>(${t('everyonePays')})</small>` : ''}</p>
-      <ul class="transfers">${lines}</ul>
+      <ul class="transfers">${lines}${r.potWon ? `<li>${t('potWon', { name: seatName(r.winner), n: r.potWon })}</li>` : ''}</ul>
       <ul class="standings">${standings(g.points, 'hand', handDeltas(r))}</ul>
       <div class="row"><button type="button" class="act gold primary" data-act="next">${t('nextHand')}</button></div>
     </div>`;
 }
 
+// What each seat gained or lost this hand: payments, plus the bets and fold fees on the table
+// (taken by the winner, or handed back after a draw).
 function handDeltas(record) {
   const d = [0, 0, 0, 0];
   for (const x of record.transfers || []) { d[x.from] -= x.amount; d[x.to] += x.amount; }
+  if (record.winner != null) for (const x of record.potFrom || []) { d[x.from] -= x.amount; d[record.winner] += x.amount; }
   return d;
 }
 
@@ -1330,6 +1370,7 @@ function render() {
 function resolvePending(value) {
   const p = ui.pending;
   if (!p) return;
+  ui.foldArmed = false;
   ui.pending = null;
   ui.selected = null;
   p.resolve(value);
@@ -1400,6 +1441,17 @@ document.addEventListener('click', ev => {
   }
   if (act === 'closeRules') { ui.overlay = ui.overlayBefore; ui.overlayBefore = null; render(); }
   if (act === 'next') { ui.overlay = null; const r = ui.resolveOverlay; ui.resolveOverlay = null; render(); r?.(); }
+  if (act === 'fold' && ui.pending?.type === 'discard') {
+    // Two taps, so a stray tap does not throw the hand away.
+    clearTimeout(ui.foldTimer);
+    if (!ui.foldArmed) {
+      ui.foldArmed = true;
+      render();
+      ui.foldTimer = setTimeout(() => { ui.foldArmed = false; render(); }, 3000);
+    } else {
+      resolvePending({ fold: true });
+    }
+  }
   if (act === 'discard' && ui.selected != null) resolvePending({ index: ui.selected, riichi: false });
   if (act === 'riichi' && ui.selected != null) resolvePending({ index: ui.selected, riichi: true });
   if (act === 'yes') resolvePending(true);

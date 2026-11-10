@@ -96,3 +96,95 @@ test('payments: ron x3 from discarder, tsumo x1 from each, capped at balance', (
 test('ron priority starts at the discarder\'s next seat', () => {
   assert.deepEqual(ronOrder(2), [3, 0, 1]);
 });
+
+// ---- riichi bets and folding ------------------------------------------------
+import { Game, BET, RIICHI_MIN } from '../js/game.js';
+import { AIController, PERSONALITIES } from '../js/ai.js';
+import { CHARACTER_IDS } from '../js/characters.js';
+
+// Never wins; declares riichi whenever it can (riichi seats only) and folds whenever it can.
+class Scripted {
+  constructor({ riichi = false, fold = false } = {}) { this.riichi = riichi; this.fold = fold; }
+  chooseTsumo() { return false; }
+  chooseRon() { return false; }
+  chooseDiscard(view) {
+    if (this.fold && view.canFold) return { fold: true };
+    const h = view.me.hand;
+    for (let i = 0; i < h.length; i++) {
+      if (this.riichi && view.canRiichi && isTenpai(h.filter((_, j) => j !== i))) return { index: i, riichi: true };
+    }
+    return { index: h.length - 1, riichi: false };
+  }
+}
+
+test('riichi bets 1 point; when everyone else folds the last player takes the table', async () => {
+  let seen = null;
+  for (let seed = 1; seed < 400 && !seen; seed++) {
+    const events = [];
+    const g = new Game({
+      seed, hands: 1,
+      seats: [new Scripted({ riichi: true }), new Scripted({ fold: true }), new Scripted({ fold: true }), new Scripted({ fold: true })].map((controller, i) => ({ name: `p${i}`, controller })),
+      onEvent: (type, e) => events.push([type, e]),
+    });
+    await g.play();
+    const r = g.history[0];
+    if (r.type !== 'foldWin') continue;
+    seen = { g, r, events };
+  }
+  assert.ok(seen, 'some seed produces a riichi followed by three folds');
+  const { g, r, events } = seen;
+  assert.equal(BET, 1);
+  assert.equal(r.winner, 0);
+  assert.equal(r.potWon, 4, 'own riichi bet + three fold fees');
+  assert.deepEqual(r.hand, [], 'a hand that was never shown stays hidden');
+  assert.deepEqual(g.points, [33, 29, 29, 29]);
+  assert.equal(events.filter(([t]) => t === 'fold').length, 3);
+  // folded players keep 4 cards (the card drawn on the folding turn is set aside)
+  assert.ok(g.players.slice(1).every(p => p.folded && p.hand.length === 4));
+});
+
+test('a draw hands every bet back; nobody can fold before a riichi', async () => {
+  for (let seed = 1; seed < 200; seed++) {
+    const g = new Game({
+      seed, hands: 1,
+      seats: [new Scripted({ riichi: true }), new Scripted({ riichi: true }), new Scripted(), new Scripted()].map((controller, i) => ({ name: `p${i}`, controller })),
+    });
+    assert.equal(g.canFold(2), false);
+    await g.play();
+    const r = g.history[0];
+    assert.equal(r.type, 'exhausted');
+    assert.deepEqual(g.points, [30, 30, 30, 30], `seed ${seed}: bets refunded`);
+    if (r.refunds.length) return;
+  }
+  assert.fail('no seed had a riichi that ended in a draw');
+});
+
+test('riichi needs 2 points, so the bet can never knock you out', async () => {
+  assert.equal(RIICHI_MIN, 2);
+  const g = new Game({ seed: 7, seats: [0, 1, 2, 3].map(i => ({ name: `p${i}`, controller: new Scripted() })) });
+  g.points = [1, 30, 30, 59];
+  assert.equal(g.view(0).canRiichi, false);
+  assert.equal(g.view(1).canRiichi, true);
+});
+
+test('AI games with bets and folds always add up to 120 and leave the table empty', async () => {
+  let folds = 0;
+  let foldWins = 0;
+  for (let seed = 1; seed <= 12; seed++) {
+    const ids = CHARACTER_IDS.slice(seed % 7, (seed % 7) + 4);
+    const g = new Game({
+      seed,
+      seats: ids.map((id, i) => ({ name: id, controller: new AIController({ personality: PERSONALITIES[id] }) })),
+      onEvent: type => { if (type === 'fold') folds++; if (type === 'foldWin') foldWins++; },
+      afterHand: async rec => {
+        assert.equal(rec.points.reduce((a, b) => a + b, 0), 120, `seed ${seed} hand ${rec.handNo}`);
+        assert.ok(rec.points.every(p => p >= 0));
+      },
+    });
+    await g.play();
+    assert.equal(g.pot.length, 0);
+    assert.equal(g.points.reduce((a, b) => a + b, 0), 120);
+  }
+  assert.ok(folds > 0, 'the AI folds sometimes');
+  console.log(`# folds ${folds}, last-one-standing wins ${foldWins} over 12 games`);
+});
