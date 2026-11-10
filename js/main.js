@@ -222,6 +222,7 @@ function newGame(seed = (Math.random() * 2 ** 32) >>> 0) {
   ui.moods = {};
   ui.expr = {};
   ui.lastDiscard = null;
+  ui.chat = {};
   ui.game = new Game({ seats, seed, onEvent, afterHand: showResult });
   return ui.game;
 }
@@ -522,6 +523,9 @@ function onRefereeMessage(m, state) {
         chainStep('chainSettling');
       }
       onEvent(m.type, localEvent(m.type, m.e));
+      break;
+    case 'chat':
+      showChat(toLocal(m.seat), m.stamp ? { stamp: m.stamp } : { text: String(m.text || '') });
       break;
     case 'think':
       ui.thinking = null;
@@ -844,6 +848,12 @@ function riichiStick(on, seat) {
 
 function speech(seat) {
   const info = seatInfo(seat);
+  const c = ui.chat[seat];
+  const cAge = c ? Date.now() - c.at : Infinity;
+  // A player's own message wins over an AI's running commentary.
+  if (cAge <= BUBBLE_MS) {
+    return `<p class="speech chat" style="animation-delay:-${cAge}ms">${c.stamp ? t(`stamps.${c.stamp}`) : escapeHtml(c.text)}</p>`;
+  }
   if (info.kind !== 'ai') return '';
   if (ui.thinking === seat) return `<p class="speech thinking"><span class="dots"><i></i><i></i><i></i></span></p>`;
   const b = ui.bubbles[seat];
@@ -851,6 +861,35 @@ function speech(seat) {
   const age = Date.now() - b.at;
   if (age > BUBBLE_MS) return '';
   return `<p class="speech" style="animation-delay:-${age}ms">${t(b.key, b.params)}</p>`;
+}
+
+// ---- table talk ----
+// Free text (40 characters) or a stamp. Stamps travel as keys, so everyone reads them in
+// their own language. Online the referee passes messages to the others at the table.
+const STAMPS = ['hi', 'nice', 'gg', 'oops', 'close', 'moon', 'rug', 'thanks'];
+ui.chat = {};
+
+function showChat(seat, msg) {
+  ui.chat[seat] = { ...msg, at: Date.now() };
+  if (seat !== HUMAN) fx.sound('turn');
+  render();
+  setTimeout(render, BUBBLE_MS + 50);
+}
+
+function sendChat(msg) {
+  const c = ui.chain;
+  if (c) {
+    if (c.conn && c.phase === 'playing') c.conn.send({ t: 'chat', ...msg });
+  } else if (ui.game) {
+    showChat(HUMAN, msg);
+  }
+}
+
+function chatOpen(open) {
+  const box = $('#chatbox');
+  box.hidden = !open;
+  $('#chatBtn').setAttribute('aria-expanded', String(open));
+  if (open) $('#chatInput').focus({ preventScroll: true });
 }
 
 function nameplate(seat) {
@@ -1273,6 +1312,17 @@ function render() {
   ov.hidden = !view;
   ov.innerHTML = view ? view() : '';
   $('#soundBtn').textContent = fx.isMuted() ? t('soundOff') : t('soundOn');
+  const canChat = !!ui.game && !ui.game.over && !ui.title && (!ui.chain || ui.chain.phase === 'playing');
+  $('#chatBtn').hidden = !canChat;
+  $('#chatBtn').textContent = t('chat');
+  if (!canChat && !$('#chatbox').hidden) chatOpen(false);
+  const stamps = $('#stamps');
+  if (stamps.dataset.lang !== getLang()) {
+    stamps.dataset.lang = getLang();
+    stamps.innerHTML = STAMPS.map(k => `<button type="button" class="stamp" data-stamp="${k}">${t(`stamps.${k}`)}</button>`).join('');
+    $('#chatInput').placeholder = t('chatPlaceholder');
+    $('#chatSend').textContent = t('chatSend');
+  }
 }
 
 // ---- input -------------------------------------------------------------
@@ -1362,6 +1412,24 @@ document.addEventListener('input', ev => {
     saveNick(ui.nick);
   }
 });
+
+$('#chatBtn').addEventListener('click', () => chatOpen($('#chatbox').hidden));
+$('#stamps').addEventListener('click', ev => {
+  const b = ev.target.closest('[data-stamp]');
+  if (!b) return;
+  sendChat({ stamp: b.dataset.stamp });
+  chatOpen(false);
+});
+$('#chatForm').addEventListener('submit', ev => {
+  ev.preventDefault();
+  const input = $('#chatInput');
+  const text = input.value.replace(/[\u0000-\u001f]/g, '').trim().slice(0, 40);
+  if (!text) return;
+  sendChat({ text });
+  input.value = '';
+  chatOpen(false);
+});
+document.addEventListener('keydown', ev => { if (ev.key === 'Escape' && !$('#chatbox').hidden) chatOpen(false); });
 
 $('#soundBtn').addEventListener('click', () => {
   fx.setMuted(!fx.isMuted());

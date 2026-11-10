@@ -42,6 +42,8 @@ const PAY_MS = Number(process.env.PAY_MS || 180_000); // every human must pay th
 // A phone puts the browser to sleep when you switch apps (to send the room code, or to approve
 // in the wallet). Someone who drops out of a room or an unpaid table keeps their place this long.
 const AWAY_MS = 5 * 60_000;
+const CHAT_GAP_MS = Number(process.env.CHAT_GAP_MS || 1500);
+const STAMPS = ['hi', 'nice', 'gg', 'oops', 'close', 'moon', 'rug', 'thanks'];
 const ROOM_IDLE_MS = 15 * 60_000;
 const AI_DELAY = process.env.FAST ? { discard: 0, tsumo: 0, ron: 0, auto: 0 } : { discard: 1300, tsumo: 800, ron: 800, auto: 1000 };
 
@@ -643,6 +645,17 @@ wss.on('connection', (ws, req) => {
       } else if (msg.t === 'paid') {
         if (!player.table) throw new Error('no table');
         await player.table.paid(player, msg);
+      } else if (msg.t === 'chat') {
+        // Table talk: a short text or a stamp, passed to everyone at the table. One per 1.5 s.
+        const t = player.table;
+        if (!t || t.closed || player.seat == null) return;
+        if (Date.now() - (player.lastChat || 0) < CHAT_GAP_MS) return;
+        player.lastChat = Date.now();
+        if (STAMPS.includes(msg.stamp)) t.broadcast({ t: 'chat', seat: player.seat, stamp: msg.stamp });
+        else {
+          const text = String(msg.text || '').replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 40);
+          if (text) t.broadcast({ t: 'chat', seat: player.seat, text });
+        }
       } else if (msg.t === 'decide') {
         if (player.table) player.table.answer(player, msg.kind, msg.value);
       }
