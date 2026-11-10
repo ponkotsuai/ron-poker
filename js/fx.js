@@ -105,7 +105,8 @@ export function coins(fromEl, toEl, amount) {
   if (!fromEl || !toEl || amount <= 0) return;
   const a = fromEl.getBoundingClientRect();
   const b = toEl.getBoundingClientRect();
-  const n = Math.min(14, 3 + Math.round(amount / 2));
+  // One coin per point for small amounts (a riichi bet or a fold fee is a single coin); a shower for big wins.
+  const n = amount <= 3 ? amount : Math.min(14, 3 + Math.round(amount / 2));
   for (let i = 0; i < n; i++) {
     const c = document.createElement('span');
     c.className = 'chip-fly';

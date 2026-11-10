@@ -292,7 +292,6 @@ function onEvent(type, e) {
   if (type === 'fold') {
     setOnce('pot', true);
     setExpr(e.seat, 'sad', 4000);
-    fx.sound('coin');
     fx.coins(seatEl(e.seat), $('.compass'), e.amount || 1);
     fx.banner(t('foldBanner', { name: seatName(e.seat) }), t('foldBannerSub'));
     pushLog(t('logFold', { name: seatName(e.seat) }), '');
