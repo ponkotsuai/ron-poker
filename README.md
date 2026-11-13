@@ -133,6 +133,20 @@ sequenceDiagram
 
 ---
 
+## Built with NEAR
+
+| NEAR feature | Where Ron Poker uses it |
+|---|---|
+| **Smart contract (Rust, near-sdk 5)** | [`contract/`](contract/) on `ronpoker-5a0mg.testnet` holds every buy-in, checks that results add up, pays out by points, and refunds on timeout. 15 unit tests. |
+| **Function-call access keys** | Each AI player's wallet plays with a key added with `addFunctionCallAccessKey`, limited to `join` and `abort` on the contract. `withdraw` needs a 1 yoctoNEAR deposit, which such a key cannot attach, so the AI's playing key can never move NEAR out. |
+| **Named accounts** | Players, AI wallets and the contract are readable `.testnet` names; the ranking shows them (shortened) instead of raw keys. |
+| **Wallet Selector + Meteor Wallet** | `@near-wallet-selector/core` with the Meteor module for sign-in and the `join` call with the 3 NEAR deposit. |
+| **near-api-js** | The referee opens and settles tables, the AI wallets pay their own buy-ins, and the ranking is built by reading every table with `get_table`. |
+| **On-chain commit–reveal** | The sha256 of the shuffle seed is stored in `create_table` and the seed is revealed in `settle`, so anyone can check the deal on NearBlocks. |
+| **Per-game session keys** | On `join` the browser stores a fresh ed25519 public key on chain; the referee only accepts moves for that seat signed with it. |
+
+---
+
 ## Rules in short
 
 - 52 cards + 2 jokers. Everyone holds 4 cards. On your turn draw 1; with 5 cards you need **Three of a Kind or better** to win.

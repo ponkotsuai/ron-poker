@@ -133,6 +133,20 @@ sequenceDiagram
 
 ---
 
+## 使っているNEARの技術
+
+| NEARの機能 | Ron Pokerでの使いどころ |
+|---|---|
+| **スマートコントラクト（Rust, near-sdk 5）** | [`contract/`](contract/)（`ronpoker-5a0mg.testnet`）が参加費を預かり、点数の合計を確認し、持ち点どおりに払い戻し、時間切れなら返金する。単体テスト15本 |
+| **関数呼び出し専用キー（Function-call access key）** | 各AIのウォレットは、`addFunctionCallAccessKey` で追加された `join` と `abort` だけを呼べるキーで遊ぶ。`withdraw` には 1 yoctoNEAR の添付が必要で、このキーでは添付できないため、AIのプレイ用キーではNEARを外に出せない |
+| **名前付きアカウント** | プレイヤー・AIウォレット・コントラクトは読める `.testnet` 名。ランキングも鍵ではなく名前（短縮表示）で出す |
+| **Wallet Selector + Meteor Wallet** | `@near-wallet-selector/core` と Meteor モジュールでサインインし、3 NEAR 付きの `join` を送る |
+| **near-api-js** | 審判が卓の開設と精算を行い、AIウォレットが自分で参加費を払い、ランキングは全卓を `get_table` で読んで作る |
+| **チェーン上のコミット・リビール** | シャッフルの種の sha256 を `create_table` で記録し、`settle` で種を公開。配牌が事前に決まっていたことを NearBlocks で誰でも確認できる |
+| **ゲームごとのセッションキー** | `join` のときにブラウザで作った ed25519 公開鍵をチェーンに記録。審判はその鍵で署名された手だけをその席の手として受け付ける |
+
+---
+
 ## ルール（短縮版）
 
 - トランプ52枚＋ジョーカー2枚。手札は各4枚。自分の番に1枚引き、5枚で**スリーカード以上**なら上がり。
